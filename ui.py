@@ -66,6 +66,7 @@ section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .issue .body a{color:#58a6ff;}
 .issue .body-loading,.issue .body-err{color:#6e7681;font-style:italic;padding:4px 0;}
 .issue .body-err{color:#ff7b72;}
+.issue.busy{background:#1c1a0d;}
 .issue.busy .ttl::before{content:"⏳ ";color:#d29922;}
 .issue.parked .ttl{color:#6e7681;}
 .issue .lbls,.pr .lbls{font-size:10px;color:#6e7681;margin-bottom:6px;}
