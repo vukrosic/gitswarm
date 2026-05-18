@@ -26,8 +26,8 @@ aside .file{padding:6px 18px;cursor:pointer;border-left:3px solid transparent;fo
 aside .file:hover{background:#161b22;}
 aside .file.active{background:#161b22;border-left-color:#1f6feb;color:#58a6ff;}
 aside .meta{font-size:11px;color:#6e7681;margin-left:8px;}
-section{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,44vw);overflow:hidden;background:#000;min-width:0;position:relative;}
-section.dock-collapsed{grid-template-columns:minmax(0,1fr) 0;}
+section{--terminal-dock-width:44vw;display:grid;grid-template-columns:minmax(0,1fr) var(--terminal-dock-width);overflow:hidden;background:#000;min-width:0;position:relative;}
+section.dock-collapsed{--terminal-dock-width:0px;grid-template-columns:minmax(0,1fr) 0;}
 #workspace{display:flex;flex-direction:column;overflow:hidden;background:#000;min-width:0;}
 #workspace h2{margin:0;padding:10px 18px;border-bottom:1px solid #30363d;font-size:13px;background:#0d1117;display:flex;justify-content:space-between;align-items:center;}
 #workspace h2 .ctl{font-size:11px;color:#8b949e;font-weight:400;}
@@ -53,7 +53,7 @@ section.pr-view .ctl{display:none;}
 #terminal-dock .dock-subtitle{font-size:11px;color:#6e7681;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #terminal-dock .dock-toggle{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit;}
 #terminal-dock .dock-toggle:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
-#main-resizer{position:absolute;top:0;bottom:0;left:calc(100% - 44vw);width:6px;margin-left:-3px;cursor:col-resize;z-index:25;background:transparent;}
+#main-resizer{position:absolute;top:0;bottom:0;left:calc(100% - var(--terminal-dock-width));width:6px;margin-left:-3px;cursor:col-resize;z-index:25;background:transparent;}
 #main-resizer:hover,#main-resizer.dragging{background:rgba(88,166,255,0.18);}
 #agent-tab-bar{display:none;gap:4px;flex-wrap:wrap;padding:6px 10px;background:#0d1117;border-bottom:1px solid #21262d;flex-shrink:0;}
 #agent-tab-bar.show{display:flex;}
@@ -69,7 +69,7 @@ section.pr-view .ctl{display:none;}
 #dock-open-btn:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 section.dock-collapsed #dock-open-btn{display:block;}
 #workspace #tab-bar{padding-right:52px;}
-#dock-resizer{position:absolute;top:0;bottom:0;right:calc(44vw - 3px);width:6px;cursor:col-resize;z-index:26;background:transparent;}
+#dock-resizer{position:absolute;top:0;bottom:0;right:calc(var(--terminal-dock-width) - 3px);width:6px;cursor:col-resize;z-index:26;background:transparent;}
 #dock-resizer:hover,#dock-resizer.dragging{background:rgba(88,166,255,0.18);}
 #term-wrap{flex:1;padding:8px;overflow:hidden;background:#000;min-height:0;}
 #terminal-root{height:100%;}
@@ -409,6 +409,7 @@ function applyTerminalDockState() {
   const openBtn = document.getElementById('dock-open-btn');
   if (!dock || !btn) return;
   const width = Math.max(320, Math.min(760, terminalDockWidth || Math.round(window.innerWidth * 0.44)));
+  if (section) section.style.setProperty('--terminal-dock-width', terminalDockCollapsed ? '0px' : `${width}px`);
   dock.style.width = terminalDockCollapsed ? '0px' : `${width}px`;
   dock.style.minWidth = terminalDockCollapsed ? '0px' : `${width}px`;
   dock.style.maxWidth = terminalDockCollapsed ? '0px' : `${width}px`;
@@ -437,6 +438,7 @@ function setupSplitResizers() {
   const updateFromX = (x) => {
     const width = clamp(window.innerWidth - x, 320, Math.max(320, window.innerWidth - 420));
     terminalDockWidth = width;
+    section.style.setProperty('--terminal-dock-width', `${width}px`);
     dock.style.width = `${width}px`;
     dock.style.minWidth = `${width}px`;
     dock.style.maxWidth = `${width}px`;
