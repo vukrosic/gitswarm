@@ -27,7 +27,7 @@
   "scripts": {
     "start": "node ./bin/gitswarm.js",
     "dashboard": "node ./bin/gitswarm.js",
-    "test": "python3 -m py_compile ./dashboard.py && bash -n ./orchestrate.sh && node --check ./bin/gitswarm.js && bash ./scripts/test-repo-arg.sh"
+    "test": "python3 -m py_compile ./dashboard.py ./server.py ./github.py ./ui.py && bash -n ./orchestrate.sh && node --check ./bin/gitswarm.js && bash ./scripts/test-repo-arg.sh"
   },
   "keywords": [
     "github",
