@@ -43,6 +43,16 @@ section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .filters button{background:#0d1117;color:#8b949e;border:1px solid #30363d;border-radius:12px;padding:3px 10px;cursor:pointer;font-size:11px;font-family:inherit;}
 .filters button:hover{color:#c9d1d9;}
 .filters button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+#tab-bar{display:none;gap:2px;padding:6px 8px 0;flex-wrap:wrap;background:#0d1117;border-bottom:1px solid #21262d;}
+#tab-bar.show{display:flex;}
+.tab{background:#161b22;border:1px solid #30363d;border-bottom:none;border-radius:5px 5px 0 0;padding:4px 10px 5px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:6px;max-width:180px;color:#8b949e;}
+.tab:hover{color:#c9d1d9;background:#1c2128;}
+.tab.active{background:#21262d;color:#c9d1d9;border-color:#30363d;}
+.tab .tab-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+.tab .tab-close{background:none;border:none;color:#6e7681;cursor:pointer;font-size:13px;padding:0;line-height:1;flex-shrink:0;}
+.tab .tab-close:hover{color:#ff7b72;}
+#tab-bar .new-tab{background:none;border:1px dashed #30363d;border-bottom:none;border-radius:5px 5px 0 0;padding:4px 10px 5px;cursor:pointer;font-size:12px;color:#6e7681;}
+#tab-bar .new-tab:hover{color:#58a6ff;border-color:#58a6ff;}
 .issue,.pr{padding:10px 18px;border-bottom:1px solid #21262d;font-size:12px;}
 .issue .num,.pr .num{color:#8b949e;}
 .issue .ttl,.pr .ttl{color:#c9d1d9;margin-bottom:6px;display:flex;align-items:baseline;gap:6px;}
@@ -178,6 +188,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
   <div id="toast"></div>
   <div id="tip"></div>
   <section>
+    <div id="tab-bar"></div>
     <h2><span id="title">pick a file or open a shell →</span>
       <span class="ctl">
         <button id="followBtn" title="Jump to the bottom of the buffer (xterm auto-tails once you're there)">↓ bottom</button>
@@ -604,6 +615,22 @@ function fireNotif(title, body, onclick) {
   } catch(e) { console.warn('notif failed', e); }
 }
 
+// ---------- tab bar (session tabs above terminal pane) ----------
+function renderTabBar() {
+  const bar = document.getElementById('tab-bar');
+  if (!allPtys.length) { bar.className = ''; bar.innerHTML = ''; return; }
+  bar.className = 'show';
+  bar.innerHTML = allPtys.map(s => {
+    const active = view && view.kind === 'pty' && view.sid === s.sid ? ' active' : '';
+    const safeSid = escapeHtml(s.sid);
+    const safeLabel = escapeHtml(s.label || s.sid);
+    return `<div class="tab${active}" data-sid="${safeSid}" data-label="${safeLabel}" title="${safeLabel}">
+      <span class="tab-label">${safeLabel}</span>
+      <button class="tab-close" data-sid="${safeSid}" title="Close this session">&#215;</button>
+    </div>`;
+  }).join('') + '<button class="new-tab" id="tabNewBtn" title="Open a new shell (same as + new shell in the header)">+</button>';
+}
+
 // ---------- PR bar (clickable header above terminal) ----------
 function renderPRBar(sid) {
   const bar = document.getElementById('pr-bar');
@@ -700,6 +727,7 @@ function selectFile(name) {
   document.querySelectorAll('aside .file').forEach(el => el.classList.toggle('active', el.dataset.name === name));
   document.querySelectorAll('aside .pty').forEach(el => el.classList.remove('active'));
   document.getElementById('pr-bar').className = '';
+  renderTabBar();
   attachTerm();
   term.reset();
   pollOnce();
@@ -720,6 +748,7 @@ function selectPty(sid, label) {
   document.querySelectorAll('aside .file').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('aside .pty').forEach(el => el.classList.toggle('active', el.dataset.sid === sid));
   renderPRBar(sid);
+  renderTabBar();
   attachTerm();
   term.reset();
   // Defer the resize until after attach so xterm rows/cols are populated.
@@ -897,6 +926,7 @@ async function listPtys() {
     }).join('');
     renderNeedsMe();
     renderActivity();
+    renderTabBar();
   } catch(e) { console.error(e); }
 }
 
@@ -983,6 +1013,24 @@ document.getElementById('ptys').addEventListener('click', (e) => {
   const row = e.target.closest('.pty');
   if (!row) return;
   selectPty(row.dataset.sid, row.dataset.label);
+});
+
+// ---------- tab bar event handlers ----------
+document.getElementById('tab-bar').addEventListener('click', (e) => {
+  const closeBtn = e.target.closest('.tab-close');
+  if (closeBtn) {
+    e.stopPropagation();
+    const sid = closeBtn.dataset.sid;
+    if (!confirm('Close this terminal session? Any running command will be killed.')) return;
+    fetch('/api/pty/close', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({sid})}).catch(()=>{});
+    listPtys();
+    return;
+  }
+  if (e.target.id === 'tabNewBtn') { newShell(null, 'shell · repo root'); return; }
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  selectPty(tab.dataset.sid, tab.dataset.label);
 });
 
 async function newShell(cwd, label) {
