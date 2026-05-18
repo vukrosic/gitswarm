@@ -131,10 +131,11 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
 <body>
 <header>
   <h1>gitswarm</h1>
-  <button id="newShellBtn" title="Open an interactive shell in the repo root">+ new shell</button>
+  <button id="newShellBtn" title="Open an interactive bash shell in the repo root (no agent)">+ new shell</button>
+  <button id="newAgentBtn" title="Open the selected CLI agent interactively in the repo root (no prompt)">💬 new agent</button>
   <label style="font-size:12px;color:#8b949e;display:flex;align-items:center;gap:6px;">
     agent
-    <select id="agentSelect" title="Which CLI agent to launch for claim / review / merge / fix-ci / propose. Saved to localStorage."
+    <select id="agentSelect" title="Which CLI agent to launch for + new agent / claim / review / merge / fix-ci / propose. Saved to localStorage."
             style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:4px 6px;font:inherit;font-size:12px;cursor:pointer;">
       <option value="codex">codex</option>
     </select>
@@ -1002,6 +1003,20 @@ async function openWorktreeShell(wtName) {
   await newShell('.agent-worktrees/' + wtName, 'shell · ' + wtName);
 }
 
+async function newAgentShell(cwd) {
+  const ag = currentAgent();
+  showToast(`spawning ${agentLabel(ag)}…`, '');
+  try {
+    const r = await fetch('/api/pty/new', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({kind:'agent-shell', agent: ag, cwd, rows: term.rows, cols: term.cols})});
+    const data = await r.json();
+    if (data.error) { showToast('error: ' + data.error, 'err'); return; }
+    showToast(`${agentLabel(data.agent || ag)} open ✓`, 'ok');
+    await listPtys();
+    selectPty(data.sid, data.label || `${ag} · repo root`);
+  } catch(e) { showToast('agent launch failed: ' + e, 'err'); }
+}
+
 async function launchIssueShell(num) {
   const ag = currentAgent();
   showToast(`preparing worktree for #${num} + launching ${agentLabel(ag)}…`, '');
@@ -1080,6 +1095,7 @@ async function cleanupState(dryRun) {
 }
 
 document.getElementById('newShellBtn').onclick = () => newShell(null, 'shell · repo root');
+document.getElementById('newAgentBtn').onclick = () => newAgentShell(null);
 
 // ---------- styled tooltip controller ----------
 // One floating element, repositioned on hover. Reads from `title` (so every

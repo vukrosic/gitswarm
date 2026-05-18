@@ -200,6 +200,73 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # Apply requested geometry
                 pty_resize(res["sid"], rows, cols)
                 return self._send_json(res)
+
+            if kind == "agent-shell":
+                # Open the selected CLI agent (codex / claude / cmf) in the
+                # repo root with NO prompt — an interactive REPL. When the
+                # agent exits, drop into a bash shell rather than closing the
+                # session, so the user can keep working in the same PTY.
+                cwd_in = payload.get("cwd")
+                if not cwd_in:
+                    cwd_path = REPO_ROOT.resolve()
+                else:
+                    p = Path(cwd_in)
+                    if not p.is_absolute():
+                        p = REPO_ROOT / p
+                    cwd_path = p.resolve()
+                try:
+                    cwd_path.relative_to(REPO_ROOT.resolve())
+                except ValueError:
+                    return self._send_json({"error": "cwd must be inside repo"}, 400)
+
+                agent = resolve_agent(
+                    payload.get("agent"),
+                    override_model=payload.get("model"),
+                    override_bin=payload.get("bin"),
+                    override_yolo=payload.get("yolo_flag"),
+                )
+                # Same launch shape as the agent-with-prompt paths, but the
+                # final argv is just `bin yolo [-m model]` — no prompt.
+                parts = [shlex.quote(agent["bin"])]
+                if agent.get("yolo"):
+                    parts.append(agent["yolo"])
+                if agent.get("model_flag") and agent.get("model"):
+                    parts.extend([agent["model_flag"], shlex.quote(agent["model"])])
+                agent_cmd = " ".join(parts)
+
+                env_extra = {
+                    "PS1": "\\[\\e[36m\\]" + agent["id"] + "\\[\\e[0m\\]:\\W$ ",
+                }
+                wrapper = (
+                    'echo "──── starting {bin} ({yolo_short}) — interactive ────"; '
+                    'echo "      agent:  {agent_label}"; '
+                    'echo "      model:  {model}"; '
+                    'echo "      cwd:    $(pwd)"; '
+                    'echo "────"; '
+                    '{agent_cmd}; '
+                    'ec=$?; '
+                    'echo; '
+                    'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
+                    'exec {shell} -i'
+                ).format(
+                    bin=shlex.quote(agent["bin"]),
+                    yolo_short=agent_short(agent),
+                    agent_label=agent["label"],
+                    model=agent.get("model") or "(agent default)",
+                    agent_cmd=agent_cmd,
+                    shell=shlex.quote(USER_SHELL),
+                )
+                argv = ["bash", "-c", wrapper]
+                sess = spawn_pty(argv, cwd=str(cwd_path), env_extra=env_extra,
+                                 label=f"{agent['id']} · {cwd_path.name}",
+                                 rows=rows, cols=cols)
+                return self._send_json({
+                    "sid": sess["sid"],
+                    "label": sess["label"],
+                    "cwd": sess["cwd"],
+                    "agent": agent["id"],
+                    "model": agent.get("model"),
+                })
             if kind == "pr-review":
                 try:
                     pr = int(payload.get("pr"))
