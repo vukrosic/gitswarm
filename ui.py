@@ -33,12 +33,17 @@ section h2 button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;bord
 section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 #term-wrap{flex:1;padding:8px;overflow:hidden;background:#000;}
 #terminal-root{height:100%;}
-#issue-pane{display:none;height:100%;overflow-y:auto;padding:20px;background:#0d1117;color:#c9d1d9;}
+#issue-pane,#pr-pane{display:none;height:100%;overflow-y:auto;padding:20px;background:#0d1117;color:#c9d1d9;}
 section.issue-view #terminal-root{display:none;}
+section.pr-view #terminal-root{display:none;}
 section.issue-view #issue-pane{display:block;}
+section.pr-view #pr-pane{display:block;}
 section.issue-view #tab-bar,
 section.issue-view #pr-bar,
+section.pr-view #tab-bar,
+section.pr-view #pr-bar,
 section.issue-view .ctl{display:none;}
+section.pr-view .ctl{display:none;}
 .xterm{height:100%;}
 #hint{padding:40px;color:#6e7681;text-align:center;background:#000;}
 .issue-read{max-width:900px;margin:0 auto;}
@@ -48,12 +53,27 @@ section.issue-view .ctl{display:none;}
 .issue-read .title{color:#f0f6fc;font-size:18px;line-height:1.35;font-weight:600;word-break:break-word;}
 .issue-read .title-input{width:100%;box-sizing:border-box;background:#161b22;color:#f0f6fc;border:1px solid #30363d;border-radius:6px;padding:8px 10px;font:inherit;font-size:16px;line-height:1.35;font-weight:600;outline:none;}
 .issue-read .title-input:focus,.issue-read .body-input:focus{border-color:#58a6ff;box-shadow:0 0 0 1px rgba(88,166,255,0.25);}
+.issue-create .body-input{min-height:220px;}
+.issue-create .hint{font-size:11px;color:#6e7681;margin:8px 0 12px;}
 .issue-read .meta{font-size:11px;color:#6e7681;margin:8px 0 12px;}
 .issue-read .lbls{font-size:10px;color:#6e7681;margin-bottom:10px;}
 .issue-read .lbls .lbl{display:inline-block;background:#161b22;padding:1px 6px;border-radius:8px;margin-right:4px;color:#8b949e;}
 .issue-read .body-input{width:100%;min-height:320px;box-sizing:border-box;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:8px;padding:12px;font:inherit;font-size:13px;line-height:1.6;resize:vertical;outline:none;}
 .issue-read .preview{margin-top:12px;padding:16px 18px;background:#0d1117;border:1px solid #21262d;border-radius:8px;font-size:13px;line-height:1.65;}
 .issue-read .preview .preview-label{color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;}
+.issue-read .diff{margin-top:12px;padding:16px 18px;background:#0d1117;border:1px solid #21262d;border-radius:8px;font-size:12px;line-height:1.5;overflow:auto;max-height:520px;}
+.issue-read .diff .preview-label{color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;}
+.issue-read .diff pre{margin:0;white-space:pre-wrap;word-break:break-word;}
+.issue-read .diff .diff-line{display:block;padding:0 8px;border-left:3px solid transparent;white-space:pre-wrap;word-break:break-word;}
+.issue-read .diff .diff-line:hover{background:#161b22;}
+.issue-read .diff .diff-line.add{background:rgba(63,185,80,0.08);border-left-color:#3fb950;color:#b6f0c2;}
+.issue-read .diff .diff-line.del{background:rgba(248,81,73,0.08);border-left-color:#f85149;color:#ffb4b1;}
+.issue-read .diff .diff-line.hunk{background:rgba(88,166,255,0.08);border-left-color:#58a6ff;color:#c8e4ff;}
+.issue-read .diff .diff-line.file{background:rgba(139,148,158,0.10);border-left-color:#8b949e;color:#d0d7de;font-weight:600;}
+.issue-read .diff .diff-line.meta{color:#8b949e;}
+.issue-read .diff .diff-line.empty{color:#6e7681;}
+.issue-read .diff .diff-loading,.issue-read .diff .diff-err{color:#6e7681;font-style:italic;}
+.issue-read .diff .diff-err{color:#ff7b72;}
 .issue-read .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
 .issue-read .actions button,.issue-read .actions a{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;}
 .issue-read .actions button:hover,.issue-read .actions a:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
@@ -89,6 +109,7 @@ section.issue-view .ctl{display:none;}
 #tab-bar .new-tab{background:none;border:1px dashed #30363d;border-bottom:none;border-radius:5px 5px 0 0;padding:4px 10px 5px;cursor:pointer;font-size:12px;color:#6e7681;}
 #tab-bar .new-tab:hover{color:#58a6ff;border-color:#58a6ff;}
 .issue,.pr{padding:10px 18px;border-bottom:1px solid #21262d;font-size:12px;}
+.pr{cursor:pointer;}
 .issue .num,.pr .num{color:#8b949e;}
 .issue .ttl,.pr .ttl{color:#c9d1d9;margin-bottom:6px;display:flex;align-items:baseline;gap:6px;}
 .issue .ttl .caret{cursor:pointer;color:#6e7681;font-size:10px;width:10px;flex-shrink:0;user-select:none;}
@@ -125,7 +146,6 @@ section.issue-view .ctl{display:none;}
 .issue button,.pr button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;font-family:inherit;flex:1;}
 .issue button:hover:not(:disabled),.pr button:hover:not(:disabled){background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .issue button:disabled,.pr button:disabled{opacity:0.4;cursor:not-allowed;}
-.issue button.headless{background:#0d1117;}
 .issue.claimed{box-shadow:inset 3px 0 0 #3fb950;}
 .issue.claimed .ttl .title-text{color:#f0f6fc;}
 /* Read modal */
@@ -225,7 +245,9 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
     </div>
     <div class="sidebar-panel active" data-sidebar-panel="issues">
       <h2>Issues <span class="count" id="issueCount"></span>
+        <button class="hdr-btn" onclick="newIssueModal()" title="Create an issue by typing the title and body directly into a form.">✍ new issue</button>
         <button class="hdr-btn" onclick="proposeIssue()" title="Open the selected agent interactively and draft a new issue body (scenario, demo, acceptance, anti-features, files). When the agent exits, the shell stays open with a ready-to-run gh issue create command.">📝 propose</button>
+        <button class="hdr-btn" onclick="batchReviewVisible()" title="Launch up to 10 issue reviews for the currently visible issues using the selected agent and model.">↧ batch review</button>
         <button class="hdr-btn" onclick="batchClaimNext()" title="Launch the next few claim-next issues as issue shells, one after another, so you can fan out work fast.">↧ batch</button>
       </h2>
       <div class="filters" id="filters">
@@ -293,8 +315,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
       </span>
     </h2>
     <div id="pr-bar"></div>
-    <div id="term-wrap"><div id="terminal-root"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div><div id="issue-pane"></div></div>
-    <div id="term-wrap"><div id="terminal-root"><div id="hint">open a shell or claim an issue</div></div><div id="issue-pane"></div></div>
+    <div id="term-wrap"><div id="terminal-root"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div><div id="issue-pane"></div><div id="pr-pane"></div></div>
   </section>
 </main>
 <script>
@@ -342,7 +363,8 @@ let allWorktrees = [];
 let allPRs = [];
 let idleState = new Map();   // sid -> {lastOutput, notified}
 let liveIssueSessions = new Map(); // issue number string -> pty session
-let lastNonIssueView = null;
+let mainViewHistory = [];
+let agentRegistry = [];
 const SIDEBAR_TABS = ['issues', 'prs', 'terminals', 'worktrees', 'activity', 'state'];
 let activeSidebarTab = localStorage.getItem('gitswarm.sidebarTab') || 'issues';
 
@@ -420,7 +442,10 @@ function issueTerminalTitle(num, label) {
 
 function showMainPane(mode) {
   const section = document.querySelector('section');
-  if (section) section.classList.toggle('issue-view', mode === 'issue');
+  if (section) {
+    section.classList.toggle('issue-view', mode === 'issue');
+    section.classList.toggle('pr-view', mode === 'pr');
+  }
 }
 
 function renderIssueMain(num) {
@@ -472,6 +497,64 @@ function renderIssueMain(num) {
     .catch(err => { pane.innerHTML = '<div class="body-err">fetch failed: ' + escapeHtml(String(err)) + '</div>'; });
 }
 
+function renderPRMain(num) {
+  const pr = allPRs.find(i => i && String(i.number) === String(num));
+  if (!pr) return;
+  const pane = document.getElementById('pr-pane');
+  const labels = (pr.labels || []).map(l => `<span class="lbl ${l.replace(/[^a-z0-9-]/g,'-')}">${escapeHtml(l)}</span>`).join('');
+  const metaBits = [];
+  if (pr.author) metaBits.push(`by ${pr.author}`);
+  if (pr.headRefName) metaBits.push(`branch ${pr.headRefName}`);
+  if (pr.updatedAt) metaBits.push(`updated ${fmtAgo(pr.updatedAt)} ago`);
+  const decision = pr.reviewDecision || '';
+  const badges = [];
+  if (pr.isDraft) badges.push('<span class="b draft">draft</span>');
+  if (decision) badges.push(`<span class="b ${decision.toLowerCase()}">${decision.replace('_',' ').toLowerCase()}</span>`);
+  badges.push(`<span class="b ci-${pr.ci}">CI: ${pr.ci}</span>`);
+  if (pr.mergeable === 'MERGEABLE' && !pr.isDraft && pr.ci === 'pass' && decision !== 'CHANGES_REQUESTED') {
+    badges.unshift('<span class="b ready">ready</span>');
+  }
+  pane.innerHTML = `
+    <div class="issue-read">
+      <div class="topline">
+        <div class="title-block">
+          <div class="num">PR #${pr.number}</div>
+          <div class="title">${escapeHtml(pr.title || '')}</div>
+          ${labels ? `<div class="lbls">${labels}</div>` : ''}
+          ${metaBits.length ? `<div class="meta">${escapeHtml(metaBits.join(' · '))}</div>` : ''}
+          <div class="badges">${badges.join('')}</div>
+        </div>
+        <div class="actions">
+          <button onclick="viewPRDiff(${pr.number})" title="Show the diff in the terminal pane">view diff</button>
+          <button onclick="closeIssueView()" title="Go back to the previous terminal or reset to the default pane">close</button>
+          <a href="${escapeHtml(pr.url || '#')}" target="_blank" title="Open PR on GitHub">↗ GitHub</a>
+        </div>
+      </div>
+      <div class="preview"><div class="preview-label">Preview</div>${renderIssueBody(pr.body || '_(empty body)_')}</div>
+      <div class="diff" id="pr-diff-${pr.number}"><div class="preview-label">Code diff from GitHub</div><div class="diff-loading">loading diff from GitHub…</div></div>
+    </div>
+  `;
+  fetchPRDiffIntoPane(pr.number);
+}
+
+async function fetchPRDiffIntoPane(num) {
+  const el = document.getElementById(`pr-diff-${num}`);
+  if (!el) return;
+  try {
+    const r = await fetch('/api/pr/diff?num=' + num);
+    const d = await r.json();
+    if (!view || view.kind !== 'pr' || String(view.num) !== String(num)) return;
+    if (d.error) {
+      el.innerHTML = `<div class="preview-label">Code diff from GitHub</div><div class="diff-err">${escapeHtml(d.error)}</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="preview-label">Code diff from GitHub</div><pre><code>${renderDiffBody(d.diff || '_(empty diff)_')}</code></pre>`;
+  } catch (err) {
+    if (!view || view.kind !== 'pr' || String(view.num) !== String(num)) return;
+    el.innerHTML = `<div class="preview-label">Code diff from GitHub</div><div class="diff-err">fetch failed: ${escapeHtml(String(err))}</div>`;
+  }
+}
+
 async function saveIssueEdits(num) {
   const titleEl = document.getElementById('issue-edit-title');
   const bodyEl = document.getElementById('issue-edit-body');
@@ -516,10 +599,10 @@ async function deleteIssueFromUI(num) {
   }
 }
 
-function openIssueInMain(num) {
+function openIssueInMain(num, remember=true) {
   const issue = allIssues.find(i => i && String(i.number) === String(num));
   if (!issue) return;
-  if (view && view.kind !== 'issue') lastNonIssueView = {...view};
+  if (remember && view && view.kind !== 'issue') mainViewHistory.push({...view});
   stopStreams();
   view = {kind: 'issue', num: String(num), label: issue.title || `#${num}`};
   inputHandler = null;
@@ -533,15 +616,29 @@ function openIssueInMain(num) {
   renderIssueMain(num);
 }
 
+function openPRInMain(num, remember=true) {
+  const pr = allPRs.find(i => i && String(i.number) === String(num));
+  if (!pr) return;
+  if (remember && view && view.kind !== 'pr') mainViewHistory.push({...view});
+  stopStreams();
+  view = {kind: 'pr', num: String(num), label: pr.title || `PR #${num}`};
+  inputHandler = null;
+  document.getElementById('title').textContent = `📦 PR #${num} ${pr.title || ''}`.trim();
+  document.querySelectorAll('aside .file').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('aside .pty').forEach(el => el.classList.remove('active'));
+  document.getElementById('pr-bar').className = '';
+  showMainPane('pr');
+  renderTabBar();
+  document.getElementById('pr-pane').scrollTop = 0;
+  renderPRMain(num);
+}
+
 function closeIssueView() {
-  if (lastNonIssueView && lastNonIssueView.kind === 'pty') {
-    selectPty(lastNonIssueView.sid, lastNonIssueView.label);
-    return;
-  }
-  if (lastNonIssueView && lastNonIssueView.kind === 'file') {
-    selectFile(lastNonIssueView.name);
-    return;
-  }
+  const prev = mainViewHistory.pop() || null;
+  if (prev && prev.kind === 'pty') { selectPty(prev.sid, prev.label); return; }
+  if (prev && prev.kind === 'file') { selectFile(prev.name); return; }
+  if (prev && prev.kind === 'issue') { openIssueInMain(prev.num, false); return; }
+  if (prev && prev.kind === 'pr') { openPRInMain(prev.num, false); return; }
   stopStreams();
   view = null;
   inputHandler = null;
@@ -683,7 +780,6 @@ function renderIssues() {
   el.innerHTML = filtered.map(it => {
     const live = issueSessionFor(it.number);
     const claimed = !!live || !!it.in_progress;
-    const locked = claimed;
     const interesting = it.labels.filter(l => ['claim-next','in-progress','needs-validation','keystone','good first issue','agent-friendly'].includes(l));
     const labelChips = interesting.map(l => `<span class="lbl ${l.replace(/[^a-z0-9-]/g,'-')}">${l}</span>`).join('');
     const claimedChip = live && !it.in_progress ? '<span class="lbl claimed">claimed</span>' : '';
@@ -716,11 +812,9 @@ function renderIssues() {
         <div class="body" id="ibody-${it.number}"></div>
         <div class="row">
           ${claimButton}
-          <button onclick="openIssueInMain(${it.number})" title="Open full issue body in the main pane">📖 read</button>
+          <button onclick="reviewIssue(${it.number})" title="Review this issue with the selected agent and post the verdict as a GitHub comment">🔍 review</button>
           <button onclick="deleteIssueFromUI(${it.number})" title="Close this GitHub issue">✕ close issue</button>
           <button onclick="window.open('${it.url}', '_blank')" title="Open issue on GitHub">↗ GitHub</button>
-          <button onclick="launchIssue(${it.number}, 'watch')" ${locked ? 'disabled' : ''} title="Spawn orchestrator (headless codex exec); auto-switch terminal to log">▶ watch</button>
-          <button class="headless" onclick="launchIssue(${it.number}, 'headless')" ${locked ? 'disabled' : ''} title="Spawn orchestrator in background; don't switch view">⌁ bg</button>
         </div>
       </div>
     `;
@@ -796,6 +890,26 @@ function renderIssueBody(md) {
   return html;
 }
 
+function renderDiffBody(diff) {
+  const lines = String(diff || '').replace(/\r\n/g, '\n').split('\n');
+  return lines.map(line => {
+    const esc = escapeHtml(line);
+    const cls = !line ? 'diff-line empty'
+      : line.startsWith('diff --git ') || line.startsWith('index ') || line.startsWith('--- ') || line.startsWith('+++ ')
+      ? 'diff-line file'
+      : line.startsWith('@@ ')
+      ? 'diff-line hunk'
+      : line.startsWith('+') && !line.startsWith('+++')
+      ? 'diff-line add'
+      : line.startsWith('-') && !line.startsWith('---')
+      ? 'diff-line del'
+      : line.startsWith('\\ No newline at end of file')
+      ? 'diff-line meta'
+      : 'diff-line meta';
+    return `<span class="${cls}">${esc || '&nbsp;'}</span>`;
+  }).join('');
+}
+
 async function listPRs() {
   try {
     const r = await fetch('/api/prs');
@@ -849,13 +963,14 @@ async function listPRs() {
         ? 'Run the selected agent against the failing checks and fix them in the branch'
         : 'Inspect the CI state and use the agent if the PR needs a repair';
       return `
-        <div class="pr">
+        <div class="pr" data-num="${pr.number}">
           <div class="ttl"><span class="num">#${pr.number}</span> <span class="title-text" title="${escapeHtml(pr.title + '\n' + (pr.summary || ''))}">${escapeHtml(pr.title)}</span> <a class="ext" href="${escapeHtml(pr.url)}" target="_blank" title="Open PR on GitHub">↗</a>${reviewBadge}</div>
           <div class="summary">${escapeHtml(pr.summary || 'no body yet')}</div>
           ${metaBits.length ? `<div class="meta">${escapeHtml(metaBits.join(' · '))}</div>` : ''}
           <div class="badges">${ready ? '<span class="b ready">ready</span>' : ''}${draftBadge}${decBadge}${ciBadge}</div>
           ${checks}
           <div class="row">
+            <button onclick="openPRInMain(${pr.number})" title="Open the PR body in the main pane">📖 read</button>
             <button onclick="window.open('${escapeHtml(pr.url)}', '_blank')" title="Open PR #${pr.number} on GitHub">↗ open</button>
             <button class="review${reviewed ? ' done' : ''}" onclick="reviewPR(${pr.number})" title="${escapeHtml(reviewTitle)}">${reviewed ? '🔁 re-review' : '🔍 review'}</button>
             <button class="merge interactive" onclick="mergeInteractive(${pr.number})" title="Open an interactive agent session that merges PR #${pr.number} into main. If the squash-merge fails on conflicts, the agent rebases onto main, resolves conflicts (asking you if uncertain), pushes, and retries. Push notification fires when it needs you.">🟢 agent merge</button>
@@ -869,6 +984,15 @@ async function listPRs() {
     renderActivity();
   } catch(e) { console.error(e); }
 }
+
+document.getElementById('prs').addEventListener('click', (e) => {
+  if (e.target.closest('button, a')) return;
+  const row = e.target.closest('.pr');
+  if (!row) return;
+  const num = parseInt(row.dataset.num, 10);
+  if (!Number.isFinite(num)) return;
+  openPRInMain(num);
+});
 
 // Per-session PR metadata (set when the PTY is one of pr-review/merge-pr).
 const sessionPRInfo = new Map();  // sid -> {pr, url, review_url_file, kind}
@@ -885,6 +1009,53 @@ function agentLabel(id) {
     if (opt) return opt.textContent;
   }
   return id;
+}
+
+function currentAgentInfo() {
+  const id = currentAgent();
+  return agentRegistry.find(a => a && a.id === id) || {id, label: agentLabel(id), model: ''};
+}
+
+async function launchIssueReview(num, focus=true) {
+  requestNotifPermission();
+  const ag = currentAgent();
+  showToast(`preparing review for issue #${num} (${agentLabel(ag)})…`, '');
+  try {
+    const r = await fetch('/api/pty/new', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({kind:'issue-review', issue: num, agent: ag, rows: term.rows, cols: term.cols})
+    });
+    const data = await r.json();
+    if (data.error) { showToast(`error: ${data.error}`, 'err'); return; }
+    sessionPRInfo.set(data.sid, {issue: num, url: data.issue_url, review_url_file: data.review_url_file, kind: 'issue-review', agent: data.agent || ag});
+    showToast(`issue #${num} → ${agentLabel(data.agent || ag)} running. Comment will auto-post on exit.`, 'ok');
+    await listPtys();
+    if (focus) selectPty(data.sid, data.label || `review issue #${num}`);
+  } catch(e) { showToast(`review failed: ${e}`, 'err'); }
+}
+
+function reviewIssue(num) {
+  return launchIssueReview(num, true);
+}
+
+async function batchReviewVisible() {
+  const agent = currentAgentInfo();
+  const model = agent.model || '(agent default)';
+  const visible = issueFilter === 'all'
+    ? allIssues
+    : allIssues.filter(it => it.labels.includes(issueFilter));
+  const issues = visible.slice(0, 10);
+  if (!issues.length) { showToast('no visible issues to review', 'err'); return; }
+  const nums = issues.map(it => `#${it.number}`).join(', ');
+  if (!confirm(`Launch ${issues.length} issue reviews with ${agent.label}${agent.model ? ` (${model})` : ''}?\n\nIssues: ${nums}`)) return;
+  showToast(`batch reviewing ${issues.length} issues with ${agent.label}${agent.model ? ` (${model})` : ''}…`, '');
+  for (let i = 0; i < issues.length; i += 1) {
+    await launchIssueReview(issues[i].number, false);
+    if (i < issues.length - 1) await new Promise(rs => setTimeout(rs, 750));
+  }
+  await listPtys();
+  await listIssues();
+  showToast(`launched ${issues.length} issue reviews with ${agent.label}${agent.model ? ` (${model})` : ''}`, 'ok');
 }
 
 async function reviewPR(num) {
@@ -1022,15 +1193,23 @@ function renderPRBar(sid) {
 }
 
 async function viewPRDiff(num) {
-  // Spawn nothing — just write the diff to a state file and open it.
+  // Spawn nothing — just load the diff directly from GitHub and open it.
   showToast(`fetching diff for #${num}…`, '');
   try {
-    const r = await fetch('/api/file?name=pr-' + num + '.diff');
-    if (r.status === 404) {
-      showToast(`no cached diff for #${num} — run review first`, 'err');
-      return;
-    }
-    selectFile(`pr-${num}.diff`);
+    const r = await fetch('/api/pr/diff?num=' + num);
+    const d = await r.json();
+    if (d.error) { showToast(`diff error: ${d.error}`, 'err'); return; }
+    stopStreams();
+    view = {kind: 'pr', num: String(num), label: `PR #${num} diff`};
+    inputHandler = null;
+    document.getElementById('title').textContent = `📦 PR #${num} diff`;
+    document.querySelectorAll('aside .file').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('aside .pty').forEach(el => el.classList.remove('active'));
+    document.getElementById('pr-bar').className = '';
+    showMainPane('pr');
+    renderTabBar();
+    const pane = document.getElementById('pr-pane');
+    if (pane) pane.innerHTML = `<div class="issue-read"><div class="topline"><div class="title-block"><div class="num">PR #${num}</div><div class="title">diff from GitHub</div></div><div class="actions"><button onclick="closeIssueView()" title="Go back to the previous terminal or reset to the default pane">close</button><a href="${escapeHtml(allPRs.find(i => i && String(i.number) === String(num))?.url || '#')}" target="_blank">↗ GitHub</a></div></div><div class="diff"><div class="preview-label">Code diff from GitHub</div><pre><code>${renderDiffBody(d.diff || '_(empty diff)_')}</code></pre></div></div>`;
   } catch(e) { console.error(e); }
 }
 
@@ -1043,32 +1222,6 @@ function showToast(msg, kind) {
   t.style.display = 'block';
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(() => t.style.display = 'none', 5000);
-}
-
-async function launchIssue(num, mode) {
-  showToast(`launching issue #${num} (${mode})…`, '');
-  try {
-    const r = await fetch('/api/launch', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({issue: num, mode})
-    });
-    const data = await r.json();
-    if (data.error) {
-      showToast(`error: ${data.error}`, 'err');
-      return;
-    }
-    showToast(`spawned on #${num} → ${data.implementer_log}`, 'ok');
-    if (mode === 'watch') {
-      // Wait briefly for the log file to appear, then auto-select it.
-      setTimeout(() => selectFile(data.implementer_log), 1500);
-    }
-    listIssues();
-    listFiles();
-    listWorktrees();
-  } catch(e) {
-    showToast(`launch failed: ${e}`, 'err');
-  }
 }
 
 function stopStreams() {
@@ -1248,6 +1401,8 @@ async function listPtys() {
         const info = sessionPRInfo.get(s.sid);
         const title = info && info.pr
           ? `codex ${info.kind} finished · PR #${info.pr}`
+          : info && info.issue
+          ? `codex ${info.kind || 'session'} finished · issue #${info.issue}`
           : `codex session finished`;
         const body = s.label || s.sid;
         fireNotif(title, body, () => selectPty(s.sid, s.label));
@@ -1265,6 +1420,8 @@ async function listPtys() {
           const info = sessionPRInfo.get(s.sid) || {};
           const title = info.pr
             ? `codex ${info.kind || 'session'} needs you · PR #${info.pr}`
+            : info.issue
+            ? `codex ${info.kind || 'session'} needs you · issue #${info.issue}`
             : `codex session needs you`;
           fireNotif(title, s.label || s.sid, () => selectPty(s.sid, s.label));
           state.notified = true;
@@ -1594,8 +1751,13 @@ function openReadModal(num) {
   if (!it) return;
   document.getElementById('modal-num').textContent = '#' + num;
   document.getElementById('modal-title').textContent = it.title || '';
+  document.getElementById('modal-footer').innerHTML = `
+    <button onclick="closeModal()">close</button>
+    <a id="modal-gh-link" href="#" target="_blank">open on GitHub ↗</a>
+  `;
   const ghLink = document.getElementById('modal-gh-link');
   ghLink.href = it.url || '#';
+  ghLink.style.display = '';
   const bodyEl = document.getElementById('modal-body');
   let body = _issueBodyCache.get(String(num));
   if (body) {
@@ -1615,6 +1777,54 @@ function openReadModal(num) {
   document.getElementById('modal-backdrop').classList.add('show');
   // Focus the close button for keyboard nav
   document.getElementById('modal-panel').querySelector('.close-btn').focus();
+}
+
+function newIssueModal() {
+  document.getElementById('modal-num').textContent = '';
+  document.getElementById('modal-title').textContent = 'New issue';
+  document.getElementById('modal-footer').innerHTML = `
+    <button onclick="createIssueFromModal()">create</button>
+    <button onclick="closeModal()">cancel</button>
+  `;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="issue-read issue-create">
+      <div class="title-block">
+        <input id="new-issue-title" class="title-input" placeholder="Issue title" />
+        <div class="hint">Type the issue exactly as you want it to land on GitHub. Body is optional.</div>
+      </div>
+      <textarea id="new-issue-body" class="body-input" placeholder="Issue body"></textarea>
+    </div>
+  `;
+  const ghLink = document.getElementById('modal-gh-link');
+  if (ghLink) ghLink.style.display = 'none';
+  document.getElementById('modal-backdrop').classList.add('show');
+  const titleEl = document.getElementById('new-issue-title');
+  if (titleEl) titleEl.focus();
+}
+
+async function createIssueFromModal() {
+  const titleEl = document.getElementById('new-issue-title');
+  const bodyEl = document.getElementById('new-issue-body');
+  if (!titleEl || !bodyEl) return;
+  const title = titleEl.value.trim();
+  const body = bodyEl.value;
+  if (!title) { showToast('title cannot be empty', 'err'); return; }
+  showToast('creating issue…', '');
+  try {
+    const r = await fetch('/api/issue/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title, body})
+    });
+    const data = await r.json();
+    if (data.error) { showToast(`create failed: ${data.error}`, 'err'); return; }
+    closeModal();
+    showToast(`created issue${data.number ? ' #' + data.number : ''}`, 'ok');
+    await listIssues();
+    if (data.number) openIssueInMain(data.number);
+  } catch (err) {
+    showToast(`create failed: ${err}`, 'err');
+  }
 }
 
 function closeModal() {
@@ -1694,6 +1904,7 @@ async function loadAgents() {
     const d = await r.json();
     const sel = document.getElementById('agentSelect');
     if (!sel || !d.agents) return d;
+    agentRegistry = d.agents || [];
     const saved = localStorage.getItem('gitswarm.agent');
     sel.innerHTML = d.agents.map(a => {
       const sfx = a.available ? '' : ` — not installed (${a.bin})`;

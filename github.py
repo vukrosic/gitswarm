@@ -829,6 +829,26 @@ def close_issue(issue_num: int):
     return update_issue(issue_num, state="closed")
 
 
+def create_issue(title: str, body: str = ""):
+    title = (title or "").strip()
+    if not title:
+        return {"error": "title is required"}
+    slug = github_repo_slug()
+    args = ["issue", "create", "--repo", slug, "--title", title]
+    args.extend(["--body", body or ""])
+    try:
+        out = run_gh(args, timeout=30, retries=2).strip()
+        invalidate_caches()
+        m = re.search(r"/issues/(\d+)", out)
+        return {
+            "number": int(m.group(1)) if m else None,
+            "url": out or "",
+            "title": title,
+        }
+    except Exception as e:
+        return {"error": gh_error(e)}
+
+
 def fetch_pr_diff(pr_num: int):
     slug = github_repo_slug()
     path = f"repos/{slug}/pulls/{pr_num}"
@@ -998,6 +1018,43 @@ def prepare_pr_review(pr_num: int):
         "issue": int(issue_num) if issue_num else None,
         "prompt_file": str(prompt_file),
         "diff_size": len(diff),
+        "url": meta.get("url"),
+    }
+
+
+def prepare_issue_review(issue_num: int):
+    """Build a review prompt for an issue and persist the body for the agent.
+
+    The issue reviewer comment is a GitHub issue comment, not a PR comment, so
+    we keep the prompt focused on whether the issue is ready to implement.
+    """
+    if not (1 <= issue_num <= 9999):
+        return {"error": "bad issue number"}
+    try:
+        meta = fetch_issue_meta(issue_num)
+    except Exception as e:
+        return {"error": f"gh api issue #{issue_num}: {gh_error(e)}"}
+    body = meta.get("body") or ""
+    title = meta.get("title") or ""
+    body_file = STATE_DIR / f"issue-review-{issue_num}.body.md"
+    body_file.write_text(body)
+
+    template_path = PROMPTS_DIR / "review-issue.md"
+    if not template_path.exists():
+        return {"error": "prompts/review-issue.md missing"}
+    tpl = template_path.read_text()
+    prompt = (
+        tpl.replace("$ISSUE_NUMBER", str(issue_num))
+           .replace("$ISSUE_TITLE", title)
+           .replace("$ISSUE_BODY", body)
+           .replace("$REPO_NAME", REPO_NAME)
+    )
+    prompt_file = STATE_DIR / f"review-issue-prompt-{issue_num}.md"
+    prompt_file.write_text(prompt)
+    return {
+        "issue": issue_num,
+        "prompt_file": str(prompt_file),
+        "body_size": len(body),
         "url": meta.get("url"),
     }
 
