@@ -1,6 +1,7 @@
 import type { PtySession } from '../types';
+import { useMemo } from 'react';
 import { ago } from '../lib/time';
-import { cleanTerminalText } from '../lib/terminal';
+import { renderTerminalText } from '../lib/terminal';
 
 interface TerminalPaneProps {
   pty: PtySession;
@@ -27,7 +28,10 @@ export function TerminalPane({
   onClose,
   onDelete,
 }: TerminalPaneProps) {
-  const displayLog = cleanTerminalText(log);
+  const displayLog = useMemo(
+    () => renderTerminalText(log, { rows: pty.rows || 30, cols: pty.cols || 120 }),
+    [log, pty.rows, pty.cols],
+  );
 
   return (
     <section className="detail terminal">
