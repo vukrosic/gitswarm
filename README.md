@@ -26,6 +26,12 @@ npm install -g gitswarm
 gitswarm
 ```
 
+From anywhere, point it at a repo explicitly:
+
+```bash
+gitswarm --repo /path/to/your/repo
+```
+
 ## Local layout
 
 ```text
