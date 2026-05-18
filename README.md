@@ -2,7 +2,7 @@
 
 # gitswarm
 
-`gitswarm` is the standalone GitHub issues, pull requests, worktree, and agent dashboard extracted from AutoResearch-AI.
+`gitswarm` is a standalone GitHub issues, pull requests, worktree, and agent dashboard for automated AI development.
 
 It is designed to run against any GitHub repo that has local git access and `gh` installed.
 
