@@ -26,7 +26,8 @@ aside .file{padding:6px 18px;cursor:pointer;border-left:3px solid transparent;fo
 aside .file:hover{background:#161b22;}
 aside .file.active{background:#161b22;border-left-color:#1f6feb;color:#58a6ff;}
 aside .meta{font-size:11px;color:#6e7681;margin-left:8px;}
-section{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,44vw);overflow:hidden;background:#000;min-width:0;}
+section{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,44vw);overflow:hidden;background:#000;min-width:0;position:relative;}
+section.dock-collapsed{grid-template-columns:minmax(0,1fr) 0;}
 #workspace{display:flex;flex-direction:column;overflow:hidden;background:#000;min-width:0;}
 #workspace h2{margin:0;padding:10px 18px;border-bottom:1px solid #30363d;font-size:13px;background:#0d1117;display:flex;justify-content:space-between;align-items:center;}
 #workspace h2 .ctl{font-size:11px;color:#8b949e;font-weight:400;}
@@ -44,18 +45,18 @@ section.pr-view #tab-bar,
 section.pr-view #pr-bar,
 section.issue-view .ctl{display:none;}
 section.pr-view .ctl{display:none;}
-#terminal-dock{display:flex;flex-direction:column;min-width:360px;border-left:1px solid #30363d;background:#000;overflow:hidden;transition:width 0.18s ease, min-width 0.18s ease, max-width 0.18s ease;}
-#terminal-dock.collapsed{width:42px;min-width:42px;max-width:42px;}
+#terminal-dock{display:flex;flex-direction:column;min-width:360px;border-left:1px solid #30363d;background:#000;overflow:hidden;transition:width 0.18s ease, min-width 0.18s ease, max-width 0.18s ease, opacity 0.18s ease;}
+#terminal-dock.collapsed{width:0;min-width:0;max-width:0;opacity:0;pointer-events:none;border-left:none;}
 #terminal-dock.collapsed .dock-body{display:none;}
-#terminal-dock.collapsed .dock-head{justify-content:center;padding-right:6px;padding-left:6px;}
-#terminal-dock.collapsed .dock-title,
-#terminal-dock.collapsed .dock-subtitle{display:none;}
-#terminal-dock.collapsed .dock-toggle{margin-left:0;}
 #terminal-dock .dock-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-bottom:1px solid #30363d;background:#0d1117;flex-shrink:0;}
 #terminal-dock .dock-title{font-size:11px;text-transform:uppercase;color:#8b949e;letter-spacing:0.08em;}
 #terminal-dock .dock-subtitle{font-size:11px;color:#6e7681;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #terminal-dock .dock-toggle{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit;}
 #terminal-dock .dock-toggle:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+#dock-open-btn{position:absolute;top:10px;right:10px;z-index:30;display:none;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:999px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit;box-shadow:0 4px 14px rgba(0,0,0,0.45);}
+#dock-open-btn:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+section.dock-collapsed #dock-open-btn{display:block;}
+#workspace #tab-bar{padding-right:52px;}
 #term-wrap{flex:1;padding:8px;overflow:hidden;background:#000;min-height:0;}
 #terminal-root{height:100%;}
 .xterm{height:100%;}
@@ -321,6 +322,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
     </div>
   </div>
   <section>
+    <button id="dock-open-btn" title="Reopen the terminal dock">terminal ⟩</button>
     <div id="workspace">
       <div id="tab-bar"></div>
       <h2><span id="title">pick something →</span>
@@ -341,6 +343,8 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
       <div class="dock-head">
         <span class="dock-title">terminal</span>
         <span class="dock-subtitle" id="dockSubtitle">main Codex / shell pane</span>
+        <button class="dock-toggle" id="dockNewBtn" title="Start a new agent terminal from the selected agent">+ agent</button>
+        <button class="dock-toggle" id="dockCloseBtn" title="Close the current terminal session">✕ close</button>
         <button class="dock-toggle" id="dockToggleBtn" title="Collapse or expand the terminal dock">⟩ collapse</button>
       </div>
       <div class="dock-body" id="term-wrap"><div id="terminal-root"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div></div>
@@ -380,11 +384,15 @@ function fitTermNow() {
 
 function applyTerminalDockState() {
   const dock = document.getElementById('terminal-dock');
+  const section = document.querySelector('section');
   const btn = document.getElementById('dockToggleBtn');
+  const openBtn = document.getElementById('dock-open-btn');
   if (!dock || !btn) return;
   dock.classList.toggle('collapsed', terminalDockCollapsed);
+  if (section) section.classList.toggle('dock-collapsed', terminalDockCollapsed);
   btn.textContent = terminalDockCollapsed ? '⟨ open' : '⟩ collapse';
   btn.title = terminalDockCollapsed ? 'Expand the terminal dock' : 'Collapse the terminal dock';
+  if (openBtn) openBtn.title = terminalDockCollapsed ? 'Reopen the terminal dock' : 'Terminal dock is open';
   localStorage.setItem('gitswarm.terminalDockCollapsed', terminalDockCollapsed ? '1' : '0');
   requestAnimationFrame(() => fitTermNow());
 }
@@ -392,6 +400,38 @@ function applyTerminalDockState() {
 function toggleTerminalDock() {
   terminalDockCollapsed = !terminalDockCollapsed;
   applyTerminalDockState();
+}
+
+function closeCurrentTerminal() {
+  if (view && view.kind === 'pty') {
+    const sid = view.sid;
+    const label = view.label || sid;
+    fetch('/api/pty/close', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({sid})})
+      .catch(()=>{})
+      .finally(async () => {
+        showToast(`closed terminal ${label}`, 'ok');
+        await listPtys();
+        view = null;
+        inputHandler = null;
+        document.getElementById('title').textContent = 'pick something →';
+        showMainPane('terminal');
+        renderTabBar();
+      });
+    return;
+  }
+  showToast('no active terminal to close', 'err');
+}
+
+async function newAgentFromDock() {
+  const agent = currentAgent();
+  const ag = agentRegistry.find(a => a && a.id === agent) || {model: ''};
+  const hint = prompt(`Start a fresh ${agentLabel(agent)} session. Optional prompt:`, '');
+  if (hint === null) return;
+  if (hint.trim()) {
+    await newAgentShell(hint.trim());
+    return;
+  }
+  await newAgentShell(null);
 }
 
 function attachTerm() {
@@ -1475,6 +1515,8 @@ async function replay() {
 document.getElementById('followBtn').onclick = () => { if (termAttached) term.scrollToBottom(); };
 document.getElementById('replayBtn').onclick = replay;
 document.getElementById('clearBtn').onclick = () => { if (termAttached) { term.reset(); cursor = view && view.kind === 'pty' ? cursor : 0; } };
+document.getElementById('dockCloseBtn').onclick = closeCurrentTerminal;
+document.getElementById('dockNewBtn').onclick = newAgentFromDock;
 document.getElementById('dockToggleBtn').onclick = toggleTerminalDock;
 document.getElementById('killBtn').onclick = async () => {
   if (!view || view.kind !== 'pty') { showToast('not a pty session', 'err'); return; }
