@@ -6,7 +6,7 @@
 
 It is designed to run against any GitHub repo that has local git access and `gh` installed.
 
-> This project is usable, but it still has bugs and unfinished features. If you want a more stable version, wait about a week. If you want to dogfood it on your own repo today, Codex can help you solve issues and keep moving.
+> This project is usable, but it still has bugs and unfinished features. If you want a more stable version, wait about a week. If you want to dogfood it on your own repo today, Codex can help you solve issues and keep moving. You can also ask Codex to take inspiration from this and adapt the ideas into your own system.
 
 ## What it does
 
