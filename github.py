@@ -142,6 +142,51 @@ def _set_winsize(fd, rows, cols):
         pass
 
 
+def _clean_child_env():
+    """Return os.environ stripped of host-orchestration vars that would
+    confuse the agents we launch.
+
+    The dashboard is often started from inside another Claude Code session
+    (e.g. when an AI is helping the user set things up). That parent sets
+    things like CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1, an empty
+    ANTHROPIC_API_KEY, and overrides ANTHROPIC_BASE_URL / API_TIMEOUT_MS.
+    Those values are meant for the parent's own SDK plumbing — if they leak
+    into a child `claude` or `claude-minimax-free`, the child tries to
+    OAuth-refresh through a host that isn't there and times out.
+
+    Children should see what the user's real terminal would see: a clean
+    env, with auth picked up from ~/.claude (for vanilla claude) or set by
+    the wrapper itself (for cmf / claude-minimax).
+    """
+    env = os.environ.copy()
+    # Drop host-orchestration markers that tell `claude` to defer auth.
+    drop = [
+        "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+        "CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDE_AGENT_SDK_VERSION",
+        "CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES",
+        "CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL",
+        "CLAUDE_CODE_DISABLE_CRON",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+    ]
+    for k in drop:
+        env.pop(k, None)
+    # An empty ANTHROPIC_API_KEY tells `claude` "use this empty key" and
+    # disables fallback to cached login. Treat empty as unset.
+    if "ANTHROPIC_API_KEY" in env and not env["ANTHROPIC_API_KEY"].strip():
+        env.pop("ANTHROPIC_API_KEY")
+    # ANTHROPIC_BASE_URL / API_TIMEOUT_MS / ANTHROPIC_MODEL inherited from a
+    # parent Claude Code session would override the wrapper script's own
+    # MiniMax routing. The cmf wrapper re-exports these itself, so dropping
+    # them at the boundary is safe — the wrapper re-sets what it needs.
+    for k in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
+              "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+              "ANTHROPIC_DEFAULT_HAIKU_MODEL", "API_TIMEOUT_MS"):
+        env.pop(k, None)
+    return env
+
+
 def spawn_pty(argv, cwd=None, env_extra=None, label="", rows=30, cols=120):
     """Fork a child under a PTY, return the session dict. Output is collected
     in sess['buf']; sess['drop'] counts how many bytes were trimmed from the
@@ -154,7 +199,7 @@ def spawn_pty(argv, cwd=None, env_extra=None, label="", rows=30, cols=120):
         try:
             if cwd:
                 os.chdir(cwd)
-            env = os.environ.copy()
+            env = _clean_child_env()
             # Force a real terminal type for children. The dashboard itself is
             # often launched from a non-interactive shell, which can leave TERM
             # stuck at "dumb" and makes Codex refuse to start its TUI.
@@ -162,6 +207,9 @@ def spawn_pty(argv, cwd=None, env_extra=None, label="", rows=30, cols=120):
             env["COLORTERM"] = "truecolor"
             if env_extra:
                 env.update(env_extra)
+            # Replace the inherited environ wholesale (clear first so the
+            # vars we just popped really vanish from the child's view).
+            os.environ.clear()
             for k, v in env.items():
                 os.environ[k] = v
             os.execvp(argv[0], argv)
