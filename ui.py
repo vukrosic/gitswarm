@@ -132,6 +132,13 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
 <header>
   <h1>gitswarm</h1>
   <button id="newShellBtn" title="Open an interactive shell in the repo root">+ new shell</button>
+  <label style="font-size:12px;color:#8b949e;display:flex;align-items:center;gap:6px;">
+    agent
+    <select id="agentSelect" title="Which CLI agent to launch for claim / review / merge / fix-ci / propose. Saved to localStorage."
+            style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:4px 6px;font:inherit;font-size:12px;cursor:pointer;">
+      <option value="codex">codex</option>
+    </select>
+  </label>
   <span id="lastUpdate">—</span>
   <span>Live terminals stream via long-poll · Log files refresh every 800ms when followed</span>
 </header>
@@ -494,18 +501,33 @@ async function listPRs() {
 // Per-session PR metadata (set when the PTY is one of pr-review/merge-pr).
 const sessionPRInfo = new Map();  // sid -> {pr, url, review_url_file, kind}
 
+// Selected CLI agent (codex / claude / claude-minimax-free). Persists across reloads.
+function currentAgent() {
+  const el = document.getElementById('agentSelect');
+  return (el && el.value) || localStorage.getItem('gitswarm.agent') || 'codex';
+}
+function agentLabel(id) {
+  const el = document.getElementById('agentSelect');
+  if (el) {
+    const opt = el.querySelector(`option[value="${id}"]`);
+    if (opt) return opt.textContent;
+  }
+  return id;
+}
+
 async function reviewPR(num) {
   requestNotifPermission();
-  showToast(`preparing review for PR #${num}…`, '');
+  const ag = currentAgent();
+  showToast(`preparing review for PR #${num} (${agentLabel(ag)})…`, '');
   try {
     const r = await fetch('/api/pty/new', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({kind:'pr-review', pr: num, rows: term.rows, cols: term.cols})
+      body: JSON.stringify({kind:'pr-review', pr: num, agent: ag, rows: term.rows, cols: term.cols})
     });
     const data = await r.json();
     if (data.error) { showToast(`error: ${data.error}`, 'err'); return; }
-    sessionPRInfo.set(data.sid, {pr: num, url: data.pr_url, review_url_file: data.review_url_file, kind: 'review'});
-    showToast(`PR #${num} → codex --yolo (${data.model || 'gpt-5.4-mini'}) running. Verdict will auto-post on exit.`, 'ok');
+    sessionPRInfo.set(data.sid, {pr: num, url: data.pr_url, review_url_file: data.review_url_file, kind: 'review', agent: data.agent || ag});
+    showToast(`PR #${num} → ${agentLabel(data.agent || ag)} running. Verdict will auto-post on exit.`, 'ok');
     await listPtys();
     selectPty(data.sid, data.label || `review PR #${num}`);
   } catch(e) { showToast(`review failed: ${e}`, 'err'); }
@@ -513,17 +535,18 @@ async function reviewPR(num) {
 
 async function mergeInteractive(num) {
   requestNotifPermission();
-  if (!confirm(`Launch codex --yolo to merge PR #${num} into main? It will try gh pr merge first; on conflicts it rebases, asks you on non-mechanical conflicts, and retries.`)) return;
-  showToast(`spawning codex --yolo merger for PR #${num}…`, '');
+  const ag = currentAgent();
+  if (!confirm(`Launch ${agentLabel(ag)} to merge PR #${num} into main? It will try gh pr merge first; on conflicts it rebases, asks you on non-mechanical conflicts, and retries.`)) return;
+  showToast(`spawning ${agentLabel(ag)} merger for PR #${num}…`, '');
   try {
     const r = await fetch('/api/pty/new', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({kind:'merge-pr', pr: num, rows: term.rows, cols: term.cols})
+      body: JSON.stringify({kind:'merge-pr', pr: num, agent: ag, rows: term.rows, cols: term.cols})
     });
     const data = await r.json();
     if (data.error) { showToast(`error: ${data.error}`, 'err'); return; }
-    sessionPRInfo.set(data.sid, {pr: num, url: data.pr_url, kind: 'merge'});
-    showToast(`PR #${num} → codex --yolo merger running. Notifications enabled for prompts.`, 'ok');
+    sessionPRInfo.set(data.sid, {pr: num, url: data.pr_url, kind: 'merge', agent: data.agent || ag});
+    showToast(`PR #${num} → ${agentLabel(data.agent || ag)} merger running. Notifications enabled for prompts.`, 'ok');
     await listPtys();
     selectPty(data.sid, data.label || `merge PR #${num}`);
   } catch(e) { showToast(`merge launch failed: ${e}`, 'err'); }
@@ -531,16 +554,17 @@ async function mergeInteractive(num) {
 
 async function fixCI(num) {
   requestNotifPermission();
-  showToast(`preparing CI fix for PR #${num}…`, '');
+  const ag = currentAgent();
+  showToast(`preparing CI fix for PR #${num} (${agentLabel(ag)})…`, '');
   try {
     const r = await fetch('/api/pty/new', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({kind:'ci-fix', pr: num, rows: term.rows, cols: term.cols})
+      body: JSON.stringify({kind:'ci-fix', pr: num, agent: ag, rows: term.rows, cols: term.cols})
     });
     const data = await r.json();
     if (data.error) { showToast(`error: ${data.error}`, 'err'); return; }
-    sessionPRInfo.set(data.sid, {pr: num, url: data.pr_url, kind: 'fix-ci'});
-    showToast(`PR #${num} → codex --yolo CI fix running.`, 'ok');
+    sessionPRInfo.set(data.sid, {pr: num, url: data.pr_url, kind: 'fix-ci', agent: data.agent || ag});
+    showToast(`PR #${num} → ${agentLabel(data.agent || ag)} CI fix running.`, 'ok');
     await listPtys();
     selectPty(data.sid, data.label || `fix CI PR #${num}`);
   } catch(e) { showToast(`CI fix launch failed: ${e}`, 'err'); }
@@ -605,7 +629,8 @@ function renderPRBar(sid) {
     verdictLink = `<span id="pr-bar-verdict"></span>`;
   }
   bar.className = 'show';
-  bar.innerHTML = `<b>${kindLabel}</b> ${prLink}<span class="sep">·</span>codex --yolo${verdictLink}`;
+  const agentTag = info.agent ? agentLabel(info.agent) : 'agent';
+  bar.innerHTML = `<b>${kindLabel}</b> ${prLink}<span class="sep">·</span>${agentTag}${verdictLink}`;
 }
 
 async function viewPRDiff(num) {
@@ -978,14 +1003,15 @@ async function openWorktreeShell(wtName) {
 }
 
 async function launchIssueShell(num) {
-  showToast(`preparing worktree for #${num} + launching codex --yolo…`, '');
+  const ag = currentAgent();
+  showToast(`preparing worktree for #${num} + launching ${agentLabel(ag)}…`, '');
   try {
     const r = await fetch('/api/pty/new', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({kind:'issue-shell', issue: num, rows: term.rows, cols: term.cols})});
+      body: JSON.stringify({kind:'issue-shell', issue: num, agent: ag, rows: term.rows, cols: term.cols})});
     const data = await r.json();
     if (data.error) { showToast('error: ' + data.error, 'err'); return; }
-    showToast(`#${num} → codex --yolo (${data.model || 'gpt-5.4-mini'}) running interactively`, 'ok');
-    sessionPRInfo.set(data.sid, {issue: num, branch: data.branch, kind: 'issue', url: data.issue_url || ''});
+    showToast(`#${num} → ${agentLabel(data.agent || ag)} running interactively`, 'ok');
+    sessionPRInfo.set(data.sid, {issue: num, branch: data.branch, kind: 'issue', url: data.issue_url || '', agent: data.agent || ag});
     await listPtys();
     selectPty(data.sid, data.label || `#${num}`);
     listIssues(); listWorktrees();
@@ -993,16 +1019,17 @@ async function launchIssueShell(num) {
 }
 
 async function proposeIssue() {
-  const hint = (prompt('rough slug for the new issue (lowercase, dashes — codex will write the real title). Leave blank for a timestamped draft.', '') || '').trim();
+  const hint = (prompt('rough slug for the new issue (lowercase, dashes — the agent will write the real title). Leave blank for a timestamped draft.', '') || '').trim();
   if (hint === null) return;
-  showToast(`spawning codex --yolo to draft a new issue…`, '');
+  const ag = currentAgent();
+  showToast(`spawning ${agentLabel(ag)} to draft a new issue…`, '');
   try {
     const r = await fetch('/api/pty/new', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({kind:'propose-issue', slug: hint, rows: term.rows, cols: term.cols})});
+      body: JSON.stringify({kind:'propose-issue', slug: hint, agent: ag, rows: term.rows, cols: term.cols})});
     const data = await r.json();
     if (data.error) { showToast('error: ' + data.error, 'err'); return; }
-    showToast(`propose · ${data.slug} → codex --yolo running. Draft: ${data.draft_file}`, 'ok');
-    sessionPRInfo.set(data.sid, {kind: 'propose', slug: data.slug});
+    showToast(`propose · ${data.slug} → ${agentLabel(data.agent || ag)} running. Draft: ${data.draft_file}`, 'ok');
+    sessionPRInfo.set(data.sid, {kind: 'propose', slug: data.slug, agent: data.agent || ag});
     await listPtys();
     selectPty(data.sid, data.label || `propose · ${data.slug}`);
     listFiles();
@@ -1113,11 +1140,54 @@ window.addEventListener('blur', hideTip);
 // Browsers gate Notifications behind a user gesture — ask on the first click.
 window.addEventListener('click', () => requestNotifPermission(), {once: true, capture: true});
 
+// Populate the agent dropdown from /api/agents. Disabled options for agents
+// whose binary isn't on $PATH (still picks them up if the user adds them later).
+async function loadAgents() {
+  try {
+    const r = await fetch('/api/agents');
+    const d = await r.json();
+    const sel = document.getElementById('agentSelect');
+    if (!sel || !d.agents) return d;
+    const saved = localStorage.getItem('gitswarm.agent');
+    sel.innerHTML = d.agents.map(a => {
+      const sfx = a.available ? '' : ` — not installed (${a.bin})`;
+      return `<option value="${escapeHtml(a.id)}" ${a.available ? '' : 'disabled'}>${escapeHtml(a.label)}${escapeHtml(sfx)}</option>`;
+    }).join('');
+    // Choose: saved → first available → default
+    const ids = d.agents.map(a => a.id);
+    let pick = saved && ids.includes(saved) && d.agents.find(a => a.id === saved && a.available) ? saved : null;
+    if (!pick) pick = (d.agents.find(a => a.available) || {}).id || d.default;
+    sel.value = pick;
+    sel.onchange = () => localStorage.setItem('gitswarm.agent', sel.value);
+    return d;
+  } catch(e) { console.warn('loadAgents failed', e); }
+}
+
+// Dev-reload: poll /api/agents for the gitswarm code mtime. If it changes
+// (the user or an AI edited ui.py / server.py / github.py and restarted the
+// server), reload the page so the new UI is picked up without manual refresh.
+let _codeMtime = 0;
+async function checkCodeMtime() {
+  try {
+    const r = await fetch('/api/agents');
+    const d = await r.json();
+    if (!d || !d.code_mtime) return;
+    if (_codeMtime && d.code_mtime > _codeMtime + 0.5) {
+      console.log('gitswarm code changed — reloading');
+      location.reload();
+      return;
+    }
+    _codeMtime = d.code_mtime;
+  } catch(e) {}
+}
+
+loadAgents().then(d => { if (d && d.code_mtime) _codeMtime = d.code_mtime; });
 listFiles(); listWorktrees(); listIssues(); listPRs(); listPtys();
 setInterval(listFiles, 5000);
 setInterval(listWorktrees, 4000);
-setInterval(listIssues, 20000);
-setInterval(listPRs, 15000);
+setInterval(listIssues, 8000);
+setInterval(listPRs, 10000);
 setInterval(listPtys, 3000);
+setInterval(checkCodeMtime, 4000);
 </script>
 </body></html>"""

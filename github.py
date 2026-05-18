@@ -42,6 +42,77 @@ CODEX_BIN   = os.environ.get("CODEX_BIN", "codex")
 CODEX_MODEL = os.environ.get("CODEX_MODEL", "gpt-5.4-mini")
 CODEX_YOLO  = os.environ.get("CODEX_YOLO", "--dangerously-bypass-approvals-and-sandbox")
 
+# Agent registry. Each entry knows how to build a one-shot interactive
+# invocation: `<bin> <yolo> [<model_flag> <model>] [--] "<prompt>"`. Adding a
+# new agent is a matter of dropping another dict in here.
+#
+# prompt_style:
+#   "double-dash" — `bin flags -m model -- "prompt"` (codex)
+#   "positional"  — `bin flags "prompt"` (claude, claude-minimax-free)
+AGENTS = {
+    "codex": {
+        "label": "codex",
+        "bin": os.environ.get("CODEX_BIN", "codex"),
+        "yolo": os.environ.get("CODEX_YOLO", "--dangerously-bypass-approvals-and-sandbox"),
+        "model": os.environ.get("CODEX_MODEL", "gpt-5.4-mini"),
+        "model_flag": "-m",
+        "prompt_style": "double-dash",
+    },
+    "claude": {
+        "label": "claude",
+        "bin": os.environ.get("CLAUDE_BIN", "claude"),
+        "yolo": os.environ.get("CLAUDE_YOLO", "--dangerously-skip-permissions"),
+        "model": os.environ.get("CLAUDE_MODEL", ""),  # empty → claude's default
+        "model_flag": "--model",
+        "prompt_style": "positional",
+    },
+    "claude-minimax-free": {
+        "label": "minimax (cmf)",
+        "bin": os.environ.get("CMF_BIN", "claude-minimax-free"),
+        "yolo": "",                # the cmf wrapper already adds --dangerously-skip-permissions
+        "model": "",               # cmf wrapper pins the model via env vars
+        "model_flag": "",
+        "prompt_style": "positional",
+    },
+}
+DEFAULT_AGENT = os.environ.get("GITSWARM_AGENT", "codex")
+
+
+def resolve_agent(agent_id, override_model=None, override_bin=None, override_yolo=None):
+    """Look up an agent preset; allow per-call overrides for bin/model/yolo."""
+    a = dict(AGENTS.get(agent_id) or AGENTS[DEFAULT_AGENT])
+    if override_bin:   a["bin"]   = override_bin
+    if override_model: a["model"] = override_model
+    if override_yolo is not None: a["yolo"] = override_yolo
+    a.setdefault("id", agent_id if agent_id in AGENTS else DEFAULT_AGENT)
+    return a
+
+
+def build_agent_cmd(agent, prompt_expr):
+    """Build the shell command that runs <agent> with <prompt_expr> as the prompt.
+
+    prompt_expr is the un-quoted text that produces the prompt at runtime
+    inside the bash wrapper, e.g. ``$(cat /path/to/prompt)`` or
+    ``$(cat "$PROMPT_FILE")``. We wrap it in double quotes here so the entire
+    expansion is one argv element.
+    """
+    parts = [shlex.quote(agent["bin"])]
+    if agent.get("yolo"):
+        parts.append(agent["yolo"])
+    if agent.get("model_flag") and agent.get("model"):
+        parts.extend([agent["model_flag"], shlex.quote(agent["model"])])
+    if agent.get("prompt_style") == "double-dash":
+        parts.append("--")
+    parts.append(f'"{prompt_expr}"')
+    return " ".join(parts)
+
+
+def agent_short(agent):
+    """Short label for the banner line in the PTY wrapper."""
+    if not agent.get("yolo"):
+        return agent["id"]
+    return "yolo" if ("bypass" in agent["yolo"] or "yolo" in agent["yolo"]) else agent["id"]
+
 def list_state_files():
     if not STATE_DIR.exists():
         return []

@@ -59,6 +59,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send_json({"error": gh_error(e)}, 500)
 
+        if u.path == "/api/agents":
+            # List configured agents + which binaries are actually installed.
+            import shutil as _sh
+            out = []
+            for aid, cfg in AGENTS.items():
+                out.append({
+                    "id": aid,
+                    "label": cfg["label"],
+                    "bin": cfg["bin"],
+                    "model": cfg.get("model") or "",
+                    "available": _sh.which(cfg["bin"]) is not None,
+                })
+            return self._send_json({"agents": out, "default": DEFAULT_AGENT,
+                                    "code_mtime": max(
+                                        (_HERE / "ui.py").stat().st_mtime,
+                                        (_HERE / "server.py").stat().st_mtime,
+                                        (_HERE / "github.py").stat().st_mtime,
+                                    )})
         if u.path == "/api/issues":
             return self._send_json({"issues": list_issues()})
         if u.path == "/api/prs":
@@ -193,9 +211,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 prompt_file = prep["prompt_file"]
                 review_out  = STATE_DIR / f"review-{pr}.md"
 
-                model = payload.get("model") or CODEX_MODEL
-                bin_  = payload.get("bin")   or CODEX_BIN
-                yolo  = payload.get("yolo_flag") or CODEX_YOLO
+                agent = resolve_agent(
+                    payload.get("agent"),
+                    override_model=payload.get("model"),
+                    override_bin=payload.get("bin"),
+                    override_yolo=payload.get("yolo_flag"),
+                )
+                agent_cmd = build_agent_cmd(agent, f"$(cat {shlex.quote(prompt_file)})")
 
                 pr_url_file = STATE_DIR / f"review-{pr}.url"
                 pr_url_file.unlink(missing_ok=True)
@@ -207,19 +229,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "PS1": "\\[\\e[35m\\]review·PR#" + str(pr) + "\\[\\e[0m\\]:\\W$ ",
                 }
 
-                # Interactive codex --yolo. The reviewer prompt instructs codex
+                # Interactive agent run. The reviewer prompt instructs the agent
                 # to WRITE its verdict to $REVIEW_OUT and exit (not echo to chat),
                 # so we get a clean markdown file we can auto-post after exit.
-                # `--save-to` is captured by gh and we write the comment URL into
-                # $REVIEW_URL_FILE so the dashboard can surface it above the term.
                 wrapper = (
                     'touch $REVIEW_OUT; '
                     'echo "──── starting {bin} ({yolo_short}) review of PR #{pr} ────"; '
+                    'echo "      agent:  {agent_label}"; '
                     'echo "      model:  {model}"; '
                     'echo "      prompt: $PROMPT_FILE"; '
-                    'echo "      out:    $REVIEW_OUT  (codex writes verdict here)"; '
+                    'echo "      out:    $REVIEW_OUT  (agent writes verdict here)"; '
                     'echo "────"; '
-                    '{bin} {yolo} -m {model_q} -- "$(cat {prompt_q})"; '
+                    '{agent_cmd}; '
                     'ec=$?; '
                     'echo; '
                     'echo "──── {bin} exited (code $ec) ────"; '
@@ -230,25 +251,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         'echo "$url" | grep -Eo \'https://github.com/[^ ]+\' | head -1 > $REVIEW_URL_FILE; '
                         'echo "  comment url saved to $REVIEW_URL_FILE"; '
                     'else '
-                        'echo "  $REVIEW_OUT is empty — codex did not produce a verdict file."; '
+                        'echo "  $REVIEW_OUT is empty — agent did not produce a verdict file."; '
                         'echo "  to post manually: gh pr comment {pr} -F $REVIEW_OUT (after writing it)"; '
                     'fi; '
                     'echo; '
                     'exec {shell} -i'
                 ).format(
                     pr=pr,
-                    model=model,
-                    model_q=shlex.quote(model),
-                    bin=shlex.quote(bin_),
-                    yolo=yolo,
-                    yolo_short="yolo" if ("bypass" in yolo or "yolo" in yolo) else yolo,
-                    prompt_q=shlex.quote(prompt_file),
+                    agent_label=agent["label"],
+                    model=agent.get("model") or "(agent default)",
+                    bin=shlex.quote(agent["bin"]),
+                    yolo_short=agent_short(agent),
+                    agent_cmd=agent_cmd,
                     shell=shlex.quote(USER_SHELL),
                 )
                 argv = ["bash", "-c", wrapper]
                 sess = spawn_pty(argv, cwd=str(REPO_ROOT),
                                  env_extra=env_extra,
-                                 label=f"codex review · PR #{pr}",
+                                 label=f"{agent['id']} review · PR #{pr}",
                                  rows=rows, cols=cols)
                 return self._send_json({
                     "sid": sess["sid"],
@@ -257,7 +277,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "pr": pr,
                     "pr_url": prep.get("url"),
                     "issue": prep.get("issue"),
-                    "model": model,
+                    "agent": agent["id"],
+                    "model": agent.get("model"),
                     "prompt_file": prompt_file,
                     "review_out": str(review_out),
                     "review_url_file": str(pr_url_file),
@@ -276,9 +297,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 pr_url = prep.get("url")
                 api_path = prep.get("api_path") or f"repos/{github_repo_slug()}/pulls/{pr}"
 
-                model = payload.get("model") or CODEX_MODEL
-                bin_  = payload.get("bin")   or CODEX_BIN
-                yolo  = payload.get("yolo_flag") or CODEX_YOLO
+                agent = resolve_agent(
+                    payload.get("agent"),
+                    override_model=payload.get("model"),
+                    override_bin=payload.get("bin"),
+                    override_yolo=payload.get("yolo_flag"),
+                )
+                agent_cmd = build_agent_cmd(agent, f"$(cat {shlex.quote(prompt_file)})")
 
                 env_extra = {
                     "PR_NUMBER": str(pr),
@@ -289,11 +314,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 }
                 wrapper = (
                     'echo "──── starting {bin} ({yolo_short}) merge of PR #{pr} ────"; '
+                    'echo "      agent:  {agent_label}"; '
                     'echo "      model:  {model}"; '
                     'echo "      branch: $PR_BRANCH"; '
                     'echo "      prompt: $PROMPT_FILE"; '
                     'echo "────"; '
-                    '{bin} {yolo} -m {model_q} -- "$(cat {prompt_q})"; '
+                    '{agent_cmd}; '
                     'ec=$?; '
                     'echo; '
                     'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
@@ -301,19 +327,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     'exec {shell} -i'
                 ).format(
                     pr=pr,
-                    model=model,
-                    model_q=shlex.quote(model),
-                    bin=shlex.quote(bin_),
-                    yolo=yolo,
-                    yolo_short="yolo" if ("bypass" in yolo or "yolo" in yolo) else yolo,
-                    prompt_q=shlex.quote(prompt_file),
+                    agent_label=agent["label"],
+                    model=agent.get("model") or "(agent default)",
+                    bin=shlex.quote(agent["bin"]),
+                    yolo_short=agent_short(agent),
+                    agent_cmd=agent_cmd,
                     api_path_q=shlex.quote(api_path),
                     shell=shlex.quote(USER_SHELL),
                 )
                 argv = ["bash", "-c", wrapper]
                 sess = spawn_pty(argv, cwd=str(REPO_ROOT),
                                  env_extra=env_extra,
-                                 label=f"codex merge · PR #{pr}",
+                                 label=f"{agent['id']} merge · PR #{pr}",
                                  rows=rows, cols=cols)
                 return self._send_json({
                     "sid": sess["sid"],
@@ -323,7 +348,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "pr_url": pr_url,
                     "branch": branch,
                     "api_path": api_path,
-                    "model": model,
+                    "agent": agent["id"],
+                    "model": agent.get("model"),
                     "prompt_file": prompt_file,
                 })
 
@@ -336,9 +362,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if prep.get("error"):
                     return self._send_json(prep, 400)
                 prompt_file = prep["prompt_file"]
-                model = payload.get("model") or CODEX_MODEL
-                bin_  = payload.get("bin")   or CODEX_BIN
-                yolo  = payload.get("yolo_flag") or CODEX_YOLO
+                agent = resolve_agent(
+                    payload.get("agent"),
+                    override_model=payload.get("model"),
+                    override_bin=payload.get("bin"),
+                    override_yolo=payload.get("yolo_flag"),
+                )
+                agent_cmd = build_agent_cmd(agent, '$(cat "$PROMPT_FILE")')
 
                 env_extra = {
                     "PR_NUMBER": str(pr),
@@ -349,29 +379,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 }
                 wrapper = (
                     'echo "──── starting {bin} ({yolo_short}) CI fix for PR #{pr} ────"; '
+                    'echo "      agent:  {agent_label}"; '
                     'echo "      model:  {model}"; '
                     'echo "      branch: $PR_BRANCH"; '
                     'echo "      prompt: $PROMPT_FILE"; '
                     'echo "      checks: {checks}"; '
                     'echo "────"; '
-                    '{bin} {yolo} -m {model_q} -- "$(cat \"$PROMPT_FILE\")"; '
+                    '{agent_cmd}; '
                     'ec=$?; '
                     'echo; '
                     'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
                     'exec {shell} -i'
                 ).format(
                     pr=pr,
-                    model=model,
-                    model_q=shlex.quote(model),
-                    bin=shlex.quote(bin_),
-                    yolo=yolo,
-                    yolo_short="yolo" if ("bypass" in yolo or "yolo" in yolo) else yolo,
+                    agent_label=agent["label"],
+                    model=agent.get("model") or "(agent default)",
+                    bin=shlex.quote(agent["bin"]),
+                    yolo_short=agent_short(agent),
+                    agent_cmd=agent_cmd,
                     checks=", ".join(prep.get("failing_checks") or []) or "no failing checks",
                     shell=shlex.quote(USER_SHELL),
                 )
                 argv = ["bash", "-c", wrapper]
                 sess = spawn_pty(argv, cwd=str(REPO_ROOT), env_extra=env_extra,
-                                 label=f"codex fix-ci · PR #{pr}", rows=rows, cols=cols)
+                                 label=f"{agent['id']} fix-ci · PR #{pr}", rows=rows, cols=cols)
                 return self._send_json({
                     "sid": sess["sid"],
                     "label": sess["label"],
@@ -379,7 +410,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "pr": pr,
                     "pr_url": prep.get("url"),
                     "branch": prep.get("branch"),
-                    "model": model,
+                    "agent": agent["id"],
+                    "model": agent.get("model"),
                     "prompt_file": prompt_file,
                 })
 
@@ -392,9 +424,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 prompt_file = prep["prompt_file"]
                 draft_file  = prep["draft_file"]
 
-                model = payload.get("model") or CODEX_MODEL
-                bin_  = payload.get("bin")   or CODEX_BIN
-                yolo  = payload.get("yolo_flag") or CODEX_YOLO
+                agent = resolve_agent(
+                    payload.get("agent"),
+                    override_model=payload.get("model"),
+                    override_bin=payload.get("bin"),
+                    override_yolo=payload.get("yolo_flag"),
+                )
+                agent_cmd = build_agent_cmd(agent, f"$(cat {shlex.quote(prompt_file)})")
 
                 env_extra = {
                     "DRAFT_FILE": draft_file,
@@ -403,16 +439,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "PS1": "\\[\\e[32m\\]propose·" + slug + "\\[\\e[0m\\]:\\W$ ",
                 }
 
-                # Same shape as the issue terminal — interactive codex --yolo,
+                # Same shape as the issue terminal — interactive agent,
                 # then drop to shell with the gh create command pre-printed.
                 wrapper = (
                     'echo "──── starting {bin} ({yolo_short}) — propose new issue ────"; '
+                    'echo "      agent:  {agent_label}"; '
                     'echo "      model:  {model}"; '
                     'echo "      slug:   {slug}"; '
-                    'echo "      draft:  $DRAFT_FILE  (codex will fill this in)"; '
+                    'echo "      draft:  $DRAFT_FILE  (agent will fill this in)"; '
                     'echo "      prompt: $PROMPT_FILE"; '
                     'echo "────"; '
-                    '{bin} {yolo} -m {model_q} -- "$(cat {prompt_q})"; '
+                    '{agent_cmd}; '
                     'ec=$?; '
                     'echo; '
                     'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
@@ -425,17 +462,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         'echo "  to create the issue:"; '
                         'echo "    gh issue create --title \\"$title\\" --body-file $DRAFT_FILE --label agent-friendly --label claim-next"; '
                     'else '
-                        'echo "  $DRAFT_FILE is empty — codex did not produce a draft."; '
+                        'echo "  $DRAFT_FILE is empty — agent did not produce a draft."; '
                     'fi; '
                     'exec {shell} -i'
                 ).format(
-                    bin=shlex.quote(bin_),
-                    yolo=yolo,
-                    yolo_short="yolo" if ("bypass" in yolo or "yolo" in yolo) else yolo,
+                    bin=shlex.quote(agent["bin"]),
+                    yolo_short=agent_short(agent),
                     slug=slug,
-                    model=model,
-                    model_q=shlex.quote(model),
-                    prompt_q=shlex.quote(prompt_file),
+                    agent_label=agent["label"],
+                    model=agent.get("model") or "(agent default)",
+                    agent_cmd=agent_cmd,
                     shell=shlex.quote(USER_SHELL),
                 )
                 argv = ["bash", "-c", wrapper]
@@ -448,7 +484,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "label": sess["label"],
                     "cwd": sess["cwd"],
                     "slug": slug,
-                    "model": model,
+                    "agent": agent["id"],
+                    "model": agent.get("model"),
                     "prompt_file": prompt_file,
                     "draft_file": draft_file,
                 })
@@ -466,9 +503,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not prompt_file or not Path(prompt_file).exists():
                     return self._send_json({"error": "prompt file missing — worktree prep incomplete"}, 500)
 
-                model = payload.get("model") or CODEX_MODEL
-                bin_  = payload.get("bin")   or CODEX_BIN
-                yolo  = payload.get("yolo_flag") or CODEX_YOLO
+                agent = resolve_agent(
+                    payload.get("agent"),
+                    override_model=payload.get("model"),
+                    override_bin=payload.get("bin"),
+                    override_yolo=payload.get("yolo_flag"),
+                )
+                agent_cmd = build_agent_cmd(agent, '$(cat "$AGENT_PROMPT_FILE")')
 
                 env_extra = {
                     "AGENT_ISSUE": str(issue),
@@ -477,35 +518,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "PS1": "\\[\\e[33m\\]#" + str(issue) + "\\[\\e[0m\\]:\\W$ ",
                 }
 
-                # Spawn codex directly under the PTY. Wrapped in bash so:
+                # Spawn the agent directly under the PTY. Wrapped in bash so:
                 #   1) we print a banner the user can see in the terminal
-                #   2) when codex exits we drop into an interactive shell in
+                #   2) when the agent exits we drop into an interactive shell in
                 #      the worktree instead of closing the session
                 # The prompt is read via $(cat …) so we don't have to worry
                 # about shell quoting on multi-line markdown.
                 wrapper = (
                     'echo "──── starting {bin} ({yolo_short}) on issue #{issue} ────"; '
+                    'echo "      agent:  {agent_label}"; '
                     'echo "      model:  {model}"; '
                     'echo "      branch: $AGENT_BRANCH"; '
                     'echo "      prompt: $AGENT_PROMPT_FILE"; '
                     'echo "────"; '
-                    '{bin} {yolo} -m {model_q} -- "$(cat \"$AGENT_PROMPT_FILE\")"; '
+                    '{agent_cmd}; '
                     'ec=$?; '
                     'echo; '
                     'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
                     'exec {shell} -i'
                 ).format(
-                    bin=shlex.quote(bin_),
-                    yolo=yolo,                           # multi-token flag string, not quoted
-                    yolo_short="yolo" if "bypass" in yolo or "yolo" in yolo else yolo,
+                    bin=shlex.quote(agent["bin"]),
+                    yolo_short=agent_short(agent),
                     issue=issue,
-                    model=model,
-                    model_q=shlex.quote(model),
+                    agent_label=agent["label"],
+                    model=agent.get("model") or "(agent default)",
+                    agent_cmd=agent_cmd,
                     shell=shlex.quote(USER_SHELL),
                 )
                 argv = ["bash", "-c", wrapper]
                 sess = spawn_pty(argv, cwd=str(wt), env_extra=env_extra,
-                                 label=f"codex #{issue} · {wt.name}",
+                                 label=f"{agent['id']} #{issue} · {wt.name}",
                                  rows=rows, cols=cols)
                 return self._send_json({
                     "sid": sess["sid"],
@@ -514,7 +556,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "issue": issue,
                     "branch": prep.get("branch"),
                     "prompt_file": prompt_file,
-                    "model": model,
+                    "agent": agent["id"],
+                    "model": agent.get("model"),
                 })
             return self._send_json({"error": f"unknown kind: {kind}"}, 400)
 
