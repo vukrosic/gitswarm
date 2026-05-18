@@ -53,6 +53,16 @@ section.pr-view .ctl{display:none;}
 #terminal-dock .dock-subtitle{font-size:11px;color:#6e7681;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #terminal-dock .dock-toggle{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit;}
 #terminal-dock .dock-toggle:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+#agent-tab-bar{display:none;gap:4px;flex-wrap:wrap;padding:6px 10px;background:#0d1117;border-bottom:1px solid #21262d;flex-shrink:0;}
+#agent-tab-bar.show{display:flex;}
+#agent-tab-bar .agent-tab{background:#161b22;border:1px solid #30363d;border-radius:999px;padding:4px 10px;cursor:pointer;font-size:11px;color:#8b949e;display:flex;align-items:center;gap:6px;max-width:220px;}
+#agent-tab-bar .agent-tab:hover{color:#c9d1d9;border-color:#58a6ff;}
+#agent-tab-bar .agent-tab.active{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+#agent-tab-bar .agent-tab .agent-tab-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#agent-tab-bar .agent-tab .agent-tab-close{background:none;border:none;color:inherit;cursor:pointer;font-size:12px;line-height:1;padding:0 0 0 2px;flex-shrink:0;}
+#agent-tab-bar .agent-tab .agent-tab-close:hover{color:#ffb4b1;}
+#agent-tab-bar .agent-tab.new-agent{background:none;border:1px dashed #30363d;color:#6e7681;}
+#agent-tab-bar .agent-tab.new-agent:hover{color:#58a6ff;border-color:#58a6ff;}
 #dock-open-btn{position:absolute;top:10px;right:10px;z-index:30;display:none;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:999px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit;box-shadow:0 4px 14px rgba(0,0,0,0.45);}
 #dock-open-btn:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 section.dock-collapsed #dock-open-btn{display:block;}
@@ -347,6 +357,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
         <button class="dock-toggle" id="dockCloseBtn" title="Close the current terminal session">✕ close</button>
         <button class="dock-toggle" id="dockToggleBtn" title="Collapse or expand the terminal dock">⟩ collapse</button>
       </div>
+      <div id="agent-tab-bar"></div>
       <div class="dock-body" id="term-wrap"><div id="terminal-root"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div></div>
   </section>
 </main>
@@ -478,6 +489,10 @@ function issueSessionFor(num) {
   return liveIssueSessions.get(String(num)) || liveIssueSessions.get(Number(num)) || null;
 }
 
+function agentShellSessions() {
+  return allPtys.filter(s => s && s.kind === 'agent-shell');
+}
+
 function worktreeForBranch(branch) {
   if (!branch) return null;
   return allWorktrees.find(w => w && w.branch === branch) || null;
@@ -587,6 +602,28 @@ function showMainPane(mode) {
     section.classList.toggle('issue-view', mode === 'issue');
     section.classList.toggle('pr-view', mode === 'pr');
   }
+}
+
+function renderAgentTabs() {
+  const bar = document.getElementById('agent-tab-bar');
+  const sessions = agentShellSessions();
+  if (!bar) return;
+  if (!sessions.length) {
+    bar.className = '';
+    bar.innerHTML = '';
+    return;
+  }
+  bar.className = 'show';
+  const activeSid = view && view.kind === 'pty' ? view.sid : '';
+  bar.innerHTML = sessions.map(s => {
+    const active = String(activeSid) === String(s.sid) ? ' active' : '';
+    const safeSid = escapeHtml(s.sid);
+    const safeLabel = escapeHtml(s.label || s.sid);
+    return `<div class="agent-tab${active}" data-sid="${safeSid}" data-label="${safeLabel}" title="${safeLabel}">
+      <span class="agent-tab-label">${safeLabel}</span>
+      <button class="agent-tab-close" data-sid="${safeSid}" title="Close this main agent tab">×</button>
+    </div>`;
+  }).join('') + '<button class="agent-tab new-agent" id="agentTabNewBtn" title="Open a new main agent tab">+ agent</button>';
 }
 
 function renderIssueMain(num) {
@@ -1422,6 +1459,7 @@ function selectPty(sid, label) {
   document.querySelectorAll('aside .file').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('aside .pty').forEach(el => el.classList.toggle('active', el.dataset.sid === sid));
   renderPRBar(sid);
+  renderAgentTabs();
   renderTabBar();
   attachTerm();
   term.reset();
@@ -1619,6 +1657,7 @@ async function listPtys() {
     liveIssueSessions = nextLiveIssueSessions;
     syncIssueClaimState();
     renderIssues();
+    renderAgentTabs();
     renderNeedsMe();
     renderActivity();
     renderTabBar();
@@ -1732,6 +1771,23 @@ document.getElementById('tab-bar').addEventListener('click', (e) => {
   }
   if (e.target.id === 'tabNewBtn') { newShell(null, 'shell · repo root'); return; }
   const tab = e.target.closest('.tab');
+  if (!tab) return;
+  selectPty(tab.dataset.sid, tab.dataset.label);
+});
+
+document.getElementById('agent-tab-bar').addEventListener('click', (e) => {
+  const closeBtn = e.target.closest('.agent-tab-close');
+  if (closeBtn) {
+    e.stopPropagation();
+    const sid = closeBtn.dataset.sid;
+    if (!confirm('Close this main agent session? Any running command will be killed.')) return;
+    fetch('/api/pty/delete', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({sid})}).catch(()=>{});
+    listPtys();
+    return;
+  }
+  if (e.target.id === 'agentTabNewBtn') { newAgentShell(null); return; }
+  const tab = e.target.closest('.agent-tab');
   if (!tab) return;
   selectPty(tab.dataset.sid, tab.dataset.label);
 });
@@ -1884,6 +1940,7 @@ async function deletePty(sid, label) {
     }
     showToast(`closed session ${label || sid}`, 'ok');
     await listPtys();
+    renderAgentTabs();
   } catch(e) {
     showToast('close failed: ' + e, 'err');
   }

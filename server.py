@@ -302,6 +302,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 argv = ["bash", "-c", wrapper]
                 sess = spawn_pty(argv, cwd=str(cwd_path), env_extra=env_extra,
                                  label=f"{agent['id']} · {cwd_path.name}",
+                                 meta={"kind": "agent-shell", "agent": agent["id"]},
                                  rows=rows, cols=cols)
                 return self._send_json({
                     "sid": sess["sid"],
