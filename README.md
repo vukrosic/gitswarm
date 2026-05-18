@@ -1,3 +1,5 @@
+![GitSwarm hero](./assets/gitswarm-hero.png)
+
 # gitswarm
 
 `gitswarm` is the standalone GitHub issues, pull requests, worktree, and agent dashboard extracted from AutoResearch-AI.
