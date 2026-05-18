@@ -565,6 +565,7 @@ def prepare_issue_worktree(issue_num: int):
                    .replace("$BRANCH", branch)
                    .replace("$WORKTREE", str(worktree))
                    .replace("$ISSUE_NUMBER", str(issue_num))
+                   .replace("$REPO_NAME", REPO_NAME)
             )
     except Exception as e:
         return {
@@ -860,6 +861,7 @@ def prepare_pr_review(pr_num: int):
         tpl.replace("$PR_NUMBER", str(pr_num))
            .replace("$ISSUE_NUMBER", issue_num or "n/a")
            .replace("$DIFF", "(see PR diff section below)")
+           .replace("$REPO_NAME", REPO_NAME)
         + "\n\n## PR body\n\n" + body
         + ("\n\n## Issue body (#" + issue_num + ")\n\n" + (ibody or f"_Linked issue fetch failed: {issue_fetch_error}_") if issue_num
            else "\n\n## Issue body\n\n_no `Closes #N` link in PR body - review based on PR body + diff alone_")
@@ -894,7 +896,8 @@ def prepare_merge(pr_num: int):
     prompt = (tpl.replace("$PR_NUMBER", str(pr_num))
                  .replace("$PR_BRANCH", branch)
                  .replace("$REPO_ROOT", str(REPO_ROOT))
-                 .replace("$REPO_API_PATH", api_path))
+                 .replace("$REPO_API_PATH", api_path)
+                 .replace("$REPO_NAME", REPO_NAME))
     prompt_file = STATE_DIR / f"merge-prompt-{pr_num}.md"
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(prompt)
@@ -927,7 +930,8 @@ def prepare_proposal(slug_hint: str = ""):
     tpl = template_path.read_text()
     prompt = (tpl.replace("$DRAFT_FILE", str(draft_file))
                  .replace("$SLUG", slug)
-                 .replace("$REPO_ROOT", str(REPO_ROOT)))
+                 .replace("$REPO_ROOT", str(REPO_ROOT))
+                 .replace("$REPO_NAME", REPO_NAME))
     prompt_file.write_text(prompt)
     if not draft_file.exists():
         draft_file.write_text("")  # empty placeholder so $DRAFT_FILE always exists
@@ -1120,6 +1124,7 @@ def prepare_ci_fix(pr_num: int):
            .replace("$PR_URL", meta.get("url") or "")
            .replace("$FAILING_CHECKS", ", ".join(meta.get("failing_checks") or []) or "none")
            .replace("$PENDING_CHECKS", ", ".join(meta.get("pending_checks") or []) or "none")
+           .replace("$REPO_NAME", REPO_NAME)
     )
     prompt_file = STATE_DIR / f"fix-ci-prompt-{pr_num}.md"
     prompt_file.write_text(prompt)

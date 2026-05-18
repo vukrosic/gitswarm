@@ -146,7 +146,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
 <main>
   <aside>
     <h2>Issues <span class="count" id="issueCount"></span>
-      <button class="hdr-btn" onclick="proposeIssue()" title="Open an interactive codex --yolo session that drafts a new agent-feature issue body (Researcher line, Demo, Acceptance, Anti-features, Files). When codex exits, the shell stays open with a ready-to-run gh issue create command.">📝 propose</button>
+      <button class="hdr-btn" onclick="proposeIssue()" title="Open the selected agent interactively and draft a new issue body (scenario, demo, acceptance, anti-features, files). When the agent exits, the shell stays open with a ready-to-run gh issue create command.">📝 propose</button>
       <button class="hdr-btn" onclick="batchClaimNext()" title="Launch the next few claim-next issues as issue shells, one after another, so you can fan out work fast.">↧ batch</button>
     </h2>
     <div class="filters" id="filters">
@@ -160,7 +160,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
     <h2>Open PRs <span class="count" id="prCount"></span></h2>
     <div id="prs"><div class="empty">loading…</div></div>
     <h2>Needs me <span class="count" id="needsCount"></span></h2>
-    <div id="needsme"><div class="empty">waiting for an idle codex session…</div></div>
+    <div id="needsme"><div class="empty">waiting for an idle agent session…</div></div>
     <h2>Live terminals</h2>
     <div id="ptys"><div class="empty">no terminals · click + new shell</div></div>
     <h2>Active worktrees <span class="count" id="worktreeCount"></span>
@@ -187,7 +187,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
       </span>
     </h2>
     <div id="pr-bar"></div>
-    <div id="term-wrap"><div id="hint">🖥️ <b>codex --yolo</b> next to an issue: preps the worktree and launches codex (gpt-5.4-mini) interactively with the issue's prompt already loaded. You can type at it like a real terminal.<br>🔍 <b>codex --yolo review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt.<br>📝 <b>propose</b> in the Issues header: drafts a new agent-feature issue body interactively with codex.<br>💻 <b>+ new shell</b> in header: plain interactive shell in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div>
+    <div id="term-wrap"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div>
   </section>
 </main>
 <script>
@@ -372,7 +372,7 @@ function renderIssues() {
         ${suggestedChips ? `<div class="suggested">${suggestedChips}</div>` : ''}
         <div class="body" id="ibody-${it.number}"></div>
         <div class="row">
-          <button onclick="launchIssueShell(${it.number})" title="Claim the issue, prep the worktree, and run codex --yolo interactively with the issue prompt">⚑ claim</button>
+          <button onclick="launchIssueShell(${it.number})" title="Claim the issue, prep a fresh worktree, and run the selected agent interactively with the issue prompt loaded">⚑ claim</button>
           <button onclick="window.open('${it.url}', '_blank')" title="Open issue on GitHub">↗ GitHub</button>
           <button onclick="launchIssue(${it.number}, 'watch')" ${it.in_progress ? 'disabled' : ''} title="Spawn orchestrator (headless codex exec); auto-switch terminal to log">▶ watch</button>
           <button class="headless" onclick="launchIssue(${it.number}, 'headless')" ${it.in_progress ? 'disabled' : ''} title="Spawn orchestrator in background; don't switch view">⌁ bg</button>
@@ -463,11 +463,11 @@ async function listPRs() {
       const reviewed = !!pr.reviewed_by_codex;
       const reviewUrl = pr.review_url || pr.url + '#issuecomment';
       const reviewBadge = reviewed
-        ? `<a href="${escapeHtml(reviewUrl)}" target="_blank" class="b reviewed" title="codex already posted a verdict on this PR — click to open">codex ✓</a>`
+        ? `<a href="${escapeHtml(reviewUrl)}" target="_blank" class="b reviewed" title="an agent already posted a verdict on this PR — click to open">reviewed ✓</a>`
         : '';
       const reviewTitle = reviewed
-          ? `codex already reviewed this PR — re-run only if the diff changed materially. Click "codex ✓" badge to read the verdict.`
-          : `Run codex --yolo (gpt-5.4-mini) interactively over the PR diff + issue body. Codex writes its verdict to a file; after it exits, the wrapper auto-posts to the PR and captures the comment URL.`;
+          ? `Already reviewed — re-run only if the diff changed materially. Click "reviewed ✓" badge to read the verdict.`
+          : `Run the selected agent interactively over the PR diff + issue body. It writes its verdict to a file; after the agent exits, the wrapper auto-posts the verdict to the PR and captures the comment URL.`;
       const metaBits = [];
       if (pr.author) metaBits.push(`by ${pr.author}`);
       if (pr.headRefName) metaBits.push(`branch ${pr.headRefName}`);
@@ -476,8 +476,8 @@ async function listPRs() {
       const pending = (pr.pending_checks || []).length ? `pending: ${pr.pending_checks.join(', ')}` : '';
       const checks = failing || pending ? `<div class="checks">${escapeHtml(failing || pending)}</div>` : '';
       const fixTitle = pr.ci === 'fail'
-        ? 'Run codex --yolo against the failing checks and fix them in the branch'
-        : 'Inspect the CI state and use codex if the PR needs a repair';
+        ? 'Run the selected agent against the failing checks and fix them in the branch'
+        : 'Inspect the CI state and use the agent if the PR needs a repair';
       return `
         <div class="pr">
           <div class="ttl"><span class="num">#${pr.number}</span> <span class="title-text" title="${escapeHtml(pr.title + '\n' + (pr.summary || ''))}">${escapeHtml(pr.title)}</span> <a class="ext" href="${escapeHtml(pr.url)}" target="_blank" title="Open PR on GitHub">↗</a>${reviewBadge}</div>
@@ -486,8 +486,8 @@ async function listPRs() {
           <div class="badges">${ready ? '<span class="b ready">ready</span>' : ''}${draftBadge}${decBadge}${ciBadge}</div>
           ${checks}
           <div class="row">
-            <button class="review${reviewed ? ' done' : ''}" onclick="reviewPR(${pr.number})" title="${escapeHtml(reviewTitle)}">${reviewed ? '🔁 re-review' : '🔍 codex --yolo review'}</button>
-            <button class="merge interactive" onclick="mergeInteractive(${pr.number})" title="Open an interactive codex --yolo session that merges PR #${pr.number} into main. If the squash-merge fails on conflicts, codex rebases onto main, resolves conflicts (asking you if uncertain), pushes, and retries. Push notification fires when it needs you.">🟢 codex --yolo merge</button>
+            <button class="review${reviewed ? ' done' : ''}" onclick="reviewPR(${pr.number})" title="${escapeHtml(reviewTitle)}">${reviewed ? '🔁 re-review' : '🔍 review'}</button>
+            <button class="merge interactive" onclick="mergeInteractive(${pr.number})" title="Open an interactive agent session that merges PR #${pr.number} into main. If the squash-merge fails on conflicts, the agent rebases onto main, resolves conflicts (asking you if uncertain), pushes, and retries. Push notification fires when it needs you.">🟢 agent merge</button>
             <button class="fixci" onclick="fixCI(${pr.number})" title="${escapeHtml(fixTitle)}">${pr.ci === 'fail' ? '🩹 fix CI' : '🩹 inspect CI'}</button>
             <button class="merge" onclick="mergePR(${pr.number})" ${mergeDisabled ? 'disabled' : ''} title="${mergeDisabled ? 'PR is draft / not mergeable / changes requested' : 'gh pr merge --squash --delete-branch — no agent, just the gh call'}">✓ quick squash-merge</button>
             <button onclick="viewPRDiff(${pr.number})" title="Show the diff in the terminal pane">view diff</button>
