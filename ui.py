@@ -66,6 +66,7 @@ section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .issue .body a{color:#58a6ff;}
 .issue .body-loading,.issue .body-err{color:#6e7681;font-style:italic;padding:4px 0;}
 .issue .body-err{color:#ff7b72;}
+.issue.busy{background:#1c1a0d;}
 .issue.busy .ttl::before{content:"⏳ ";color:#d29922;}
 .issue.parked .ttl{color:#6e7681;}
 .issue .lbls,.pr .lbls{font-size:10px;color:#6e7681;margin-bottom:6px;}
@@ -486,6 +487,7 @@ async function listPRs() {
           <div class="badges">${ready ? '<span class="b ready">ready</span>' : ''}${draftBadge}${decBadge}${ciBadge}</div>
           ${checks}
           <div class="row">
+            <button onclick="window.open('${escapeHtml(pr.url)}', '_blank')" title="Open PR #${pr.number} on GitHub">↗ open</button>
             <button class="review${reviewed ? ' done' : ''}" onclick="reviewPR(${pr.number})" title="${escapeHtml(reviewTitle)}">${reviewed ? '🔁 re-review' : '🔍 review'}</button>
             <button class="merge interactive" onclick="mergeInteractive(${pr.number})" title="Open an interactive agent session that merges PR #${pr.number} into main. If the squash-merge fails on conflicts, the agent rebases onto main, resolves conflicts (asking you if uncertain), pushes, and retries. Push notification fires when it needs you.">🟢 agent merge</button>
             <button class="fixci" onclick="fixCI(${pr.number})" title="${escapeHtml(fixTitle)}">${pr.ci === 'fail' ? '🩹 fix CI' : '🩹 inspect CI'}</button>
