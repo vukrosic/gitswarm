@@ -292,22 +292,58 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "model": agent.get("model"),
                 })
             if kind == "agent-prompt":
-                cwd_in = payload.get("cwd")
-                if not cwd_in:
-                    cwd_path = REPO_ROOT.resolve()
-                else:
-                    p = Path(cwd_in)
-                    if not p.is_absolute():
-                        p = REPO_ROOT / p
-                    cwd_path = p.resolve()
-                try:
-                    cwd_path.relative_to(REPO_ROOT.resolve())
-                except ValueError:
-                    return self._send_json({"error": "cwd must be inside repo"}, 400)
+                issue_num = None
+                if payload.get("issue") not in (None, "", 0, "0"):
+                    try:
+                        issue_num = int(payload.get("issue"))
+                    except (TypeError, ValueError):
+                        return self._send_json({"error": "issue must be int"}, 400)
+                    existing = live_issue_pty(issue_num)
+                    if existing:
+                        meta = existing.get("meta") or {}
+                        agent = resolve_agent(
+                            payload.get("agent"),
+                            override_model=payload.get("model"),
+                            override_bin=payload.get("bin"),
+                            override_yolo=payload.get("yolo_flag"),
+                        )
+                        return self._send_json({
+                            "sid": existing["sid"],
+                            "label": existing.get("label") or f"#{issue_num}",
+                            "cwd": existing.get("cwd") or "",
+                            "issue": issue_num,
+                            "branch": meta.get("branch"),
+                            "worktree": meta.get("worktree"),
+                            "prompt_file": meta.get("prompt_file"),
+                            "agent": agent["id"],
+                            "model": agent.get("model"),
+                            "reused": True,
+                        })
 
+                cwd_in = payload.get("cwd")
                 prompt = (payload.get("prompt") or "").strip()
                 if not prompt:
                     return self._send_json({"error": "prompt is required"}, 400)
+
+                prep = None
+                cwd_path = None
+                if issue_num is not None and not cwd_in:
+                    prep = prepare_issue_worktree(issue_num)
+                    if prep.get("error"):
+                        return self._send_json(prep, 400)
+                    cwd_path = Path(prep["worktree"]).resolve()
+                else:
+                    if not cwd_in:
+                        cwd_path = REPO_ROOT.resolve()
+                    else:
+                        p = Path(cwd_in)
+                        if not p.is_absolute():
+                            p = REPO_ROOT / p
+                        cwd_path = p.resolve()
+                    try:
+                        cwd_path.relative_to(REPO_ROOT.resolve())
+                    except ValueError:
+                        return self._send_json({"error": "cwd must be inside repo"}, 400)
 
                 agent = resolve_agent(
                     payload.get("agent"),
@@ -324,10 +360,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "PROMPT_FILE": str(prompt_file),
                     "PS1": "\\[\\e[36m\\]" + agent["id"] + "\\[\\e[0m\\]:\\W$ ",
                 }
+                if issue_num is not None:
+                    env_extra["AGENT_ISSUE"] = str(issue_num)
+                    if prep:
+                        env_extra["AGENT_BRANCH"] = prep.get("branch", "")
+                        env_extra["AGENT_PROMPT_FILE"] = prompt_file
+                        env_extra["AGENT_WORKTREE"] = prep.get("worktree", "")
                 wrapper = (
                     'echo "──── starting {bin} ({yolo_short}) — prompt ────"; '
                     'echo "      agent:  {agent_label}"; '
                     'echo "      model:  {model}"; '
+                    'echo "      issue:  {issue_info}"; '
                     'echo "      prompt: $PROMPT_FILE"; '
                     'echo "      cwd:    $(pwd)"; '
                     'echo "────"; '
@@ -341,6 +384,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     yolo_short=agent_short(agent),
                     agent_label=agent["label"],
                     model=agent.get("model") or "(agent default)",
+                    issue_info=("#" + str(issue_num)) if issue_num is not None else "(none)",
                     agent_cmd=agent_cmd,
                     shell=shlex.quote(USER_SHELL),
                 )
@@ -349,7 +393,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     argv,
                     cwd=str(cwd_path),
                     env_extra=env_extra,
-                    label=f"{agent['id']} · {prompt_slug}",
+                    label=f"{agent['id']} #{issue_num} · {prompt_slug}" if issue_num is not None else f"{agent['id']} · {prompt_slug}",
                     rows=rows,
                     cols=cols,
                     meta={
@@ -357,6 +401,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "agent": agent["id"],
                         "prompt_file": str(prompt_file),
                         "cwd": str(cwd_path),
+                        "issue": issue_num,
+                        "branch": (prep or {}).get("branch", ""),
+                        "worktree": (prep or {}).get("worktree", ""),
                     },
                 )
                 return self._send_json({
@@ -367,6 +414,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "model": agent.get("model"),
                     "prompt_file": str(prompt_file),
                     "prompt": prompt,
+                    "issue": issue_num,
+                    "branch": (prep or {}).get("branch", ""),
+                    "worktree": (prep or {}).get("worktree", ""),
                 })
             if kind == "pr-review":
                 try:

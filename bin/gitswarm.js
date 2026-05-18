@@ -109,7 +109,9 @@ Commands:
 Examples:
   gitswarm --repo /path/to/repo
   gitswarm init --repo /path/to/repo
-  gitswarm doctor --repo /path/to/repo`);
+  gitswarm doctor --repo /path/to/repo
+  gitswarm launch --agent codex --model gpt-5.4-mini "summarize the first 5 open issues"
+  gitswarm launch --issue 14 "tell me what to do next"`);
 }
 
 function runGit(repoRoot, args, allowFail = false) {
@@ -299,6 +301,7 @@ function parseLaunchArgs(args) {
   let cwd = '';
   let port = '';
   let label = '';
+  let issue = '';
   let prompt = '';
 
   const rest = [];
@@ -314,6 +317,8 @@ function parseLaunchArgs(args) {
     if (arg.startsWith('--port=')) { port = arg.slice('--port='.length); continue; }
     if (arg === '--label' && args[i + 1]) { label = args[++i]; continue; }
     if (arg.startsWith('--label=')) { label = arg.slice('--label='.length); continue; }
+    if (arg === '--issue' && args[i + 1]) { issue = args[++i]; continue; }
+    if (arg.startsWith('--issue=')) { issue = arg.slice('--issue='.length); continue; }
     if (arg === '--') {
       rest.push(...args.slice(i + 1));
       break;
@@ -321,7 +326,7 @@ function parseLaunchArgs(args) {
     rest.push(arg);
   }
   prompt = rest.join(' ').trim();
-  return { agent, model, cwd, port, label, prompt };
+  return { agent, model, cwd, port, label, issue, prompt };
 }
 
 async function ensureDashboardRunning(repoRoot, port) {
@@ -370,6 +375,7 @@ async function launchPromptSession(repoRoot, forwarded) {
     agent: opts.agent,
     model: opts.model || undefined,
     cwd: opts.cwd || undefined,
+    issue: opts.issue ? Number(opts.issue) : undefined,
     label: opts.label || opts.prompt,
     prompt: opts.prompt,
     rows: 30,
