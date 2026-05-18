@@ -127,6 +127,24 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
 #toast.ok{border-color:#3fb950;color:#56d364;}
 #tip{position:fixed;background:#1f2428;color:#f0f6fc;padding:6px 10px;border-radius:5px;font-size:11px;font-family:ui-monospace,Menlo,Consolas,monospace;border:1px solid #30363d;pointer-events:none;display:none;z-index:10000;max-width:320px;white-space:normal;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,0.5);opacity:0;transition:opacity 0.12s ease;}
 #tip.show{opacity:1;}
+#issue-modal{position:fixed;inset:0;background:rgba(1,4,9,0.85);display:none;align-items:center;justify-content:center;z-index:200;padding:20px;}
+#issue-modal.open{display:flex;}
+#issue-modal .panel{background:#0d1117;border:1px solid #30363d;border-radius:8px;width:100%;max-width:680px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.6);}
+#issue-modal .panel-hdr{padding:12px 16px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+#issue-modal .panel-hdr .title{flex:1;font-size:13px;color:#c9d1d9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#issue-modal .panel-hdr .close{background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit;}
+#issue-modal .panel-hdr .close:hover{background:#30363d;color:#c9d1d9;}
+#issue-modal .panel-hdr .gh-link{color:#58a6ff;font-size:11px;text-decoration:none;white-space:nowrap;}
+#issue-modal .panel-hdr .gh-link:hover{text-decoration:underline;}
+#issue-modal .panel-body{flex:1;overflow-y:auto;padding:16px;font-size:12px;color:#c9d1d9;line-height:1.6;}
+#issue-modal .panel-body b{color:#58a6ff;display:block;margin-top:12px;}
+#issue-modal .panel-body b:first-child{margin-top:0;}
+#issue-modal .panel-body pre{background:#161b22;padding:8px 10px;border-radius:3px;overflow-x:auto;font-size:11px;margin:6px 0;}
+#issue-modal .panel-body code{background:#161b22;padding:0 4px;border-radius:2px;font-size:11px;}
+#issue-modal .panel-body pre code{background:transparent;padding:0;}
+#issue-modal .panel-body a{color:#58a6ff;}
+#issue-modal .panel-body-loading{color:#6e7681;font-style:italic;}
+#issue-modal .panel-body-err{color:#ff7b72;font-style:italic;}
 </style></head>
 <body>
 <header>
@@ -177,6 +195,16 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
   </aside>
   <div id="toast"></div>
   <div id="tip"></div>
+  <div id="issue-modal" onclick="if(event.target===this)closeIssueModal()">
+    <div class="panel" onclick="event.stopPropagation()">
+      <div class="panel-hdr">
+        <span class="title" id="modal-title"></span>
+        <a class="gh-link" id="modal-gh-link" href="#" target="_blank">open on GitHub</a>
+        <button class="close" onclick="closeIssueModal()">✕</button>
+      </div>
+      <div class="panel-body" id="modal-body"></div>
+    </div>
+  </div>
   <section>
     <h2><span id="title">pick a file or open a shell →</span>
       <span class="ctl">
@@ -372,6 +400,7 @@ function renderIssues() {
         ${suggestedChips ? `<div class="suggested">${suggestedChips}</div>` : ''}
         <div class="body" id="ibody-${it.number}"></div>
         <div class="row">
+          <button onclick="openIssueModal(${it.number})" title="Read the full issue body in a focused panel">read</button>
           <button onclick="launchIssueShell(${it.number})" title="Claim the issue, prep a fresh worktree, and run the selected agent interactively with the issue prompt loaded">⚑ claim</button>
           <button onclick="window.open('${it.url}', '_blank')" title="Open issue on GitHub">↗ GitHub</button>
           <button onclick="launchIssue(${it.number}, 'watch')" ${it.in_progress ? 'disabled' : ''} title="Spawn orchestrator (headless codex exec); auto-switch terminal to log">▶ watch</button>
@@ -648,6 +677,38 @@ async function viewPRDiff(num) {
 }
 
 function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function openIssueModal(num) {
+  const modal = document.getElementById('issue-modal');
+  const titleEl = document.getElementById('modal-title');
+  const bodyEl = document.getElementById('modal-body');
+  const ghLink = document.getElementById('modal-gh-link');
+  const it = allIssues.find(i => String(i.number) === String(num));
+  if (!it) return;
+  titleEl.textContent = '#' + num + ' · ' + it.title;
+  ghLink.href = it.url || '#';
+  bodyEl.innerHTML = '<div class="panel-body-loading">loading…</div>';
+  modal.classList.add('open');
+  const cached = _issueBodyCache.get(String(num));
+  if (cached) {
+    bodyEl.innerHTML = renderIssueBody(cached);
+    return;
+  }
+  fetch('/api/issue?num=' + num)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { bodyEl.innerHTML = '<div class="panel-body-err">' + escapeHtml(d.error) + '</div>'; return; }
+      _issueBodyCache.set(String(num), d.body || '_(empty body)_');
+      bodyEl.innerHTML = renderIssueBody(d.body || '_(empty body)_');
+    })
+    .catch(err => { bodyEl.innerHTML = '<div class="panel-body-err">fetch failed: ' + escapeHtml(String(err)) + '</div>'; });
+}
+
+function closeIssueModal() {
+  document.getElementById('issue-modal').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeIssueModal(); });
 
 function showToast(msg, kind) {
   const t = document.getElementById('toast');
