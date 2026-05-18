@@ -26,16 +26,16 @@ aside .file{padding:6px 18px;cursor:pointer;border-left:3px solid transparent;fo
 aside .file:hover{background:#161b22;}
 aside .file.active{background:#161b22;border-left-color:#1f6feb;color:#58a6ff;}
 aside .meta{font-size:11px;color:#6e7681;margin-left:8px;}
-section{display:flex;flex-direction:column;overflow:hidden;background:#000;}
-section h2{margin:0;padding:10px 18px;border-bottom:1px solid #30363d;font-size:13px;background:#0d1117;display:flex;justify-content:space-between;align-items:center;}
-section h2 .ctl{font-size:11px;color:#8b949e;font-weight:400;}
-section h2 button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:3px 8px;cursor:pointer;font-size:11px;margin-left:6px;}
-section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
-#term-wrap{flex:1;padding:8px;overflow:hidden;background:#000;}
-#terminal-root{height:100%;}
+section{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,44vw);overflow:hidden;background:#000;min-width:0;}
+#workspace{display:flex;flex-direction:column;overflow:hidden;background:#000;min-width:0;}
+#workspace h2{margin:0;padding:10px 18px;border-bottom:1px solid #30363d;font-size:13px;background:#0d1117;display:flex;justify-content:space-between;align-items:center;}
+#workspace h2 .ctl{font-size:11px;color:#8b949e;font-weight:400;}
+#workspace h2 button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:3px 8px;cursor:pointer;font-size:11px;margin-left:6px;}
+#workspace h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+#workspace #tab-bar{border-radius:0;}
+#workspace #pr-bar{border-radius:0;}
+#content-pane{flex:1;overflow:hidden;position:relative;min-width:0;}
 #issue-pane,#pr-pane{display:none;height:100%;overflow-y:auto;padding:20px;background:#0d1117;color:#c9d1d9;}
-section.issue-view #terminal-root{display:none;}
-section.pr-view #terminal-root{display:none;}
 section.issue-view #issue-pane{display:block;}
 section.pr-view #pr-pane{display:block;}
 section.issue-view #tab-bar,
@@ -44,6 +44,20 @@ section.pr-view #tab-bar,
 section.pr-view #pr-bar,
 section.issue-view .ctl{display:none;}
 section.pr-view .ctl{display:none;}
+#terminal-dock{display:flex;flex-direction:column;min-width:360px;border-left:1px solid #30363d;background:#000;overflow:hidden;transition:width 0.18s ease, min-width 0.18s ease, max-width 0.18s ease;}
+#terminal-dock.collapsed{width:42px;min-width:42px;max-width:42px;}
+#terminal-dock.collapsed .dock-body{display:none;}
+#terminal-dock.collapsed .dock-head{justify-content:center;padding-right:6px;padding-left:6px;}
+#terminal-dock.collapsed .dock-title,
+#terminal-dock.collapsed .dock-subtitle{display:none;}
+#terminal-dock.collapsed .dock-toggle{margin-left:0;}
+#terminal-dock .dock-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-bottom:1px solid #30363d;background:#0d1117;flex-shrink:0;}
+#terminal-dock .dock-title{font-size:11px;text-transform:uppercase;color:#8b949e;letter-spacing:0.08em;}
+#terminal-dock .dock-subtitle{font-size:11px;color:#6e7681;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#terminal-dock .dock-toggle{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit;}
+#terminal-dock .dock-toggle:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+#term-wrap{flex:1;padding:8px;overflow:hidden;background:#000;min-height:0;}
+#terminal-root{height:100%;}
 .xterm{height:100%;}
 #hint{padding:40px;color:#6e7681;text-align:center;background:#000;}
 .issue-read{max-width:900px;margin:0 auto;}
@@ -142,6 +156,8 @@ section.pr-view .ctl{display:none;}
 .issue .lbls .lbl.claimed{background:#13321f;color:#3fb950;}
 .issue .lbls .lbl.needs-validation{background:#222;color:#6e7681;}
 .issue .lbls .lbl.keystone{background:#4a0f2a;color:#f778ba;}
+.issue .lbls .lbl.branch,.pr .lbls .lbl.branch{background:#16233a;color:#79c0ff;}
+.issue .lbls .lbl.worktree,.pr .lbls .lbl.worktree{background:#2a1f0e;color:#d29922;}
 .issue .row,.pr .row{display:flex;gap:6px;flex-wrap:wrap;}
 .issue button,.pr button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;font-family:inherit;flex:1;}
 .issue button:hover:not(:disabled),.pr button:hover:not(:disabled){background:#1f6feb;color:#fff;border-color:#1f6feb;}
@@ -305,17 +321,29 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
     </div>
   </div>
   <section>
-    <div id="tab-bar"></div>
-    <h2><span id="title">pick something →</span>
-      <span class="ctl">
-        <button id="followBtn" title="Jump to the bottom">↓</button>
-        <button id="replayBtn" title="Replay log from start">replay</button>
-        <button id="clearBtn" title="Clear the terminal pane">clear</button>
-        <button id="killBtn" title="Kill the current PTY session">✕</button>
-      </span>
-    </h2>
-    <div id="pr-bar"></div>
-    <div id="term-wrap"><div id="terminal-root"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div><div id="issue-pane"></div><div id="pr-pane"></div></div>
+    <div id="workspace">
+      <div id="tab-bar"></div>
+      <h2><span id="title">pick something →</span>
+        <span class="ctl">
+          <button id="followBtn" title="Jump to the bottom">↓</button>
+          <button id="replayBtn" title="Replay log from start">replay</button>
+          <button id="clearBtn" title="Clear the terminal pane">clear</button>
+          <button id="killBtn" title="Kill the current PTY session">✕</button>
+        </span>
+      </h2>
+      <div id="pr-bar"></div>
+      <div id="content-pane">
+        <div id="issue-pane"></div>
+        <div id="pr-pane"></div>
+      </div>
+    </div>
+    <div id="terminal-dock">
+      <div class="dock-head">
+        <span class="dock-title">terminal</span>
+        <span class="dock-subtitle" id="dockSubtitle">main Codex / shell pane</span>
+        <button class="dock-toggle" id="dockToggleBtn" title="Collapse or expand the terminal dock">⟩ collapse</button>
+      </div>
+      <div class="dock-body" id="term-wrap"><div id="terminal-root"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div></div>
   </section>
 </main>
 <script>
@@ -338,14 +366,42 @@ term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
 let termAttached = false;
 let inputHandler = null;
+let terminalDockCollapsed = localStorage.getItem('gitswarm.terminalDockCollapsed') === '1';
+
+function fitTermNow() {
+  try {
+    if (!termAttached) return;
+    const dock = document.getElementById('terminal-dock');
+    if (dock && dock.classList.contains('collapsed')) return;
+    fitAddon.fit();
+    sendResize();
+  } catch(e) {}
+}
+
+function applyTerminalDockState() {
+  const dock = document.getElementById('terminal-dock');
+  const btn = document.getElementById('dockToggleBtn');
+  if (!dock || !btn) return;
+  dock.classList.toggle('collapsed', terminalDockCollapsed);
+  btn.textContent = terminalDockCollapsed ? '⟨ open' : '⟩ collapse';
+  btn.title = terminalDockCollapsed ? 'Expand the terminal dock' : 'Collapse the terminal dock';
+  localStorage.setItem('gitswarm.terminalDockCollapsed', terminalDockCollapsed ? '1' : '0');
+  requestAnimationFrame(() => fitTermNow());
+}
+
+function toggleTerminalDock() {
+  terminalDockCollapsed = !terminalDockCollapsed;
+  applyTerminalDockState();
+}
+
 function attachTerm() {
   if (termAttached) return;
   const wrap = document.getElementById('terminal-root');
   wrap.innerHTML = '';
   term.open(wrap);
-  fitAddon.fit();
+  fitTermNow();
   termAttached = true;
-  window.addEventListener('resize', () => { try { fitAddon.fit(); sendResize(); } catch(e){} });
+  window.addEventListener('resize', () => { fitTermNow(); });
   // One single onData handler; it dispatches based on the current mode.
   term.onData(data => { if (inputHandler) inputHandler(data); });
 }
@@ -380,6 +436,51 @@ function showSidebarTab(name) {
 
 function issueSessionFor(num) {
   return liveIssueSessions.get(String(num)) || liveIssueSessions.get(Number(num)) || null;
+}
+
+function worktreeForBranch(branch) {
+  if (!branch) return null;
+  return allWorktrees.find(w => w && w.branch === branch) || null;
+}
+
+function pathLeaf(value) {
+  const parts = String(value || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
+function issueLocationInfo(num) {
+  const live = issueSessionFor(num);
+  if (live) {
+    return {
+      branch: live.branch || '',
+      worktree: pathLeaf(live.worktree || ''),
+      live: true,
+    };
+  }
+  const issueNum = String(num);
+  const wt = allWorktrees.find(w => w && w.branch && (
+    w.branch === `agent/${issueNum}` ||
+    w.branch.startsWith(`agent/${issueNum}-`) ||
+    w.branch.includes(`/${issueNum}-`)
+  ));
+  if (wt) {
+    return {
+      branch: wt.branch || '',
+      worktree: wt.name || '',
+      live: false,
+    };
+  }
+  return {branch: '', worktree: '', live: false};
+}
+
+function prLocationInfo(pr) {
+  if (!pr) return {branch: '', worktree: '', live: false};
+  const wt = worktreeForBranch(pr.headRefName || '');
+  return {
+    branch: pr.headRefName || '',
+    worktree: wt ? wt.name || '' : '',
+    live: !!wt,
+  };
 }
 
 function syncIssueClaimState() {
@@ -453,10 +554,13 @@ function renderIssueMain(num) {
   if (!issue) return;
   const pane = document.getElementById('issue-pane');
   const renderBody = (body) => {
+    const loc = issueLocationInfo(num);
     const labels = (issue.labels || []).map(l => `<span class="lbl ${l.replace(/[^a-z0-9-]/g,'-')}">${escapeHtml(l)}</span>`).join('');
     const metaBits = [];
     if (issue.author) metaBits.push(`by ${issue.author}`);
     if (issue.assignees && issue.assignees.length) metaBits.push(`assignee ${issue.assignees.join(', ')}`);
+    if (loc.branch) metaBits.push(`branch ${loc.branch}`);
+    if (loc.worktree) metaBits.push(`worktree ${loc.worktree}`);
     if (issue.updatedAt) metaBits.push(`updated ${fmtAgo(issue.updatedAt)} ago`);
     if (issue.comment_count != null) metaBits.push(`${issue.comment_count} comment${issue.comment_count === 1 ? '' : 's'}`);
     pane.innerHTML = `
@@ -501,10 +605,12 @@ function renderPRMain(num) {
   const pr = allPRs.find(i => i && String(i.number) === String(num));
   if (!pr) return;
   const pane = document.getElementById('pr-pane');
+  const loc = prLocationInfo(pr);
   const labels = (pr.labels || []).map(l => `<span class="lbl ${l.replace(/[^a-z0-9-]/g,'-')}">${escapeHtml(l)}</span>`).join('');
   const metaBits = [];
   if (pr.author) metaBits.push(`by ${pr.author}`);
   if (pr.headRefName) metaBits.push(`branch ${pr.headRefName}`);
+  if (loc.worktree) metaBits.push(`worktree ${loc.worktree}`);
   if (pr.updatedAt) metaBits.push(`updated ${fmtAgo(pr.updatedAt)} ago`);
   const decision = pr.reviewDecision || '';
   const badges = [];
@@ -733,6 +839,7 @@ async function listWorktrees() {
         return `<div class="worktree ${runningSet.has(w.name) ? 'live' : ''}"><div class="name">${w.name} ${statusBadge}</div><div class="commits">${parts.join(' · ')}</div><button onclick="openWorktreeShell('${safe}')" title="Open an interactive shell in this worktree">🖥️ shell</button>${removeBtn}</div>`;
       }).join('');
     }
+    renderIssues();
   } catch(e) { console.error(e); }
 }
 
@@ -779,10 +886,15 @@ function renderIssues() {
   if (!filtered.length) { el.innerHTML = `<div class="empty">no issues</div>`; return; }
   el.innerHTML = filtered.map(it => {
     const live = issueSessionFor(it.number);
+    const loc = issueLocationInfo(it.number);
     const claimed = !!live || !!it.in_progress;
     const interesting = it.labels.filter(l => ['claim-next','in-progress','needs-validation','keystone','good first issue','agent-friendly'].includes(l));
     const labelChips = interesting.map(l => `<span class="lbl ${l.replace(/[^a-z0-9-]/g,'-')}">${l}</span>`).join('');
     const claimedChip = live && !it.in_progress ? '<span class="lbl claimed">claimed</span>' : '';
+    const locationChips = [];
+    if (loc.branch) locationChips.push(`<span class="lbl branch" title="${escapeHtml(loc.branch)}">branch ${escapeHtml(loc.branch)}</span>`);
+    if (loc.worktree) locationChips.push(`<span class="lbl worktree" title="${escapeHtml(loc.worktree)}">worktree ${escapeHtml(loc.worktree)}</span>`);
+    const location = locationChips.length ? `<div class="lbls">${locationChips.join('')}</div>` : '';
     const suggested = (it.suggested_labels || []).filter(l => !it.labels.includes(l));
     const suggestedChips = suggested.length ? `<span class="suggested">suggested ${suggested.map(l => `<span class="lbl">${l}</span>`).join('')}</span>` : '';
     const metaBits = [];
@@ -807,6 +919,7 @@ function renderIssues() {
         </div>
         <div class="summary">${summary}</div>
         ${metaBits.length ? `<div class="meta">${escapeHtml(metaBits.join(' · '))}</div>` : ''}
+        ${location}
         ${(claimedChip || labelChips) ? `<div class="lbls">${claimedChip}${labelChips}</div>` : ''}
         ${suggestedChips ? `<div class="suggested">${suggestedChips}</div>` : ''}
         <div class="body" id="ibody-${it.number}"></div>
@@ -937,6 +1050,7 @@ async function listPRs() {
     if (tabCountEl) tabCountEl.textContent = String(allPRs.length);
     if (!allPRs.length) { el.innerHTML = '<div class="empty">no open PRs</div>'; renderActivity(); return; }
     el.innerHTML = allPRs.map(pr => {
+      const loc = prLocationInfo(pr);
       const decision = pr.reviewDecision || '';
       const decBadge = decision ? `<span class="b ${decision.toLowerCase()}">${decision.replace('_',' ').toLowerCase()}</span>` : '';
       const ciBadge = `<span class="b ci-${pr.ci}">CI: ${pr.ci}</span>`;
@@ -955,6 +1069,7 @@ async function listPRs() {
       const metaBits = [];
       if (pr.author) metaBits.push(`by ${pr.author}`);
       if (pr.headRefName) metaBits.push(`branch ${pr.headRefName}`);
+      if (loc.worktree) metaBits.push(`worktree ${loc.worktree}`);
       if (pr.updatedAt) metaBits.push(`updated ${fmtAgo(pr.updatedAt)} ago`);
       const failing = (pr.failing_checks || []).length ? `failing: ${pr.failing_checks.join(', ')}` : '';
       const pending = (pr.pending_checks || []).length ? `pending: ${pr.pending_checks.join(', ')}` : '';
@@ -1249,6 +1364,10 @@ function selectFile(name) {
 }
 
 function selectPty(sid, label) {
+  if (terminalDockCollapsed) {
+    terminalDockCollapsed = false;
+    applyTerminalDockState();
+  }
   stopStreams();
   view = {kind: 'pty', sid, label};
   cursor = 0;
@@ -1356,6 +1475,7 @@ async function replay() {
 document.getElementById('followBtn').onclick = () => { if (termAttached) term.scrollToBottom(); };
 document.getElementById('replayBtn').onclick = replay;
 document.getElementById('clearBtn').onclick = () => { if (termAttached) { term.reset(); cursor = view && view.kind === 'pty' ? cursor : 0; } };
+document.getElementById('dockToggleBtn').onclick = toggleTerminalDock;
 document.getElementById('killBtn').onclick = async () => {
   if (!view || view.kind !== 'pty') { showToast('not a pty session', 'err'); return; }
   if (!confirm('Close this terminal session? Any running command will be killed.')) return;
@@ -1455,6 +1575,7 @@ async function listPtys() {
     }).join('');
     liveIssueSessions = nextLiveIssueSessions;
     syncIssueClaimState();
+    renderIssues();
     renderNeedsMe();
     renderActivity();
     renderTabBar();
@@ -1940,6 +2061,7 @@ async function checkCodeMtime() {
 
 loadAgents().then(d => { if (d && d.code_mtime) _codeMtime = d.code_mtime; });
 showSidebarTab(activeSidebarTab);
+applyTerminalDockState();
 listFiles(); listWorktrees(); listIssues(); listPRs(); listPtys();
 setInterval(listFiles, 5000);
 setInterval(listWorktrees, 4000);
