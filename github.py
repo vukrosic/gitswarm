@@ -88,6 +88,7 @@ from backend.github_remote import (
     create_issue,
     fetch_pr_diff,
     list_issues,
+    list_milestones,
     list_prs,
     invalidate_caches,
 )
@@ -161,6 +162,7 @@ def _worktree_status(path: Path):
     head = ""
     dirty = False
     ahead = 0
+    behind = 0
     try:
         branch = subprocess.run(
             ["git", "-C", str(path), "branch", "--show-current"],
@@ -190,6 +192,14 @@ def _worktree_status(path: Path):
         ahead = len([line for line in commits.splitlines() if line.strip()])
     except Exception:
         ahead = 0
+    try:
+        commits = subprocess.run(
+            ["git", "-C", str(path), "log", "--oneline", "HEAD..origin/main"],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout.strip()
+        behind = len([line for line in commits.splitlines() if line.strip()])
+    except Exception:
+        behind = 0
     merged = _git_branch_merged(branch)
     if dirty:
         status = "dirty"
@@ -204,6 +214,7 @@ def _worktree_status(path: Path):
         "head": head,
         "dirty": dirty,
         "ahead": ahead,
+        "behind": behind,
         "merged": merged,
         "status": status,
         "safe_remove": merged and not dirty,

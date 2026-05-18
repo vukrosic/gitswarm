@@ -1,20 +1,54 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchFile, fetchPrDiff, fetchSnapshot } from '../api';
-import type { Issue, Snapshot } from '../types';
+import type { Issue, Milestone, Snapshot } from '../types';
 import type { ActivityItem, IssueFilter, Selection } from '../types/dashboard';
+
+function loadPersistedSelection(): Selection {
+  try {
+    const raw = localStorage.getItem('gitswarm.selection');
+    if (!raw) return { kind: 'none' };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return { kind: 'none' };
+    if (parsed.kind === 'issue' || parsed.kind === 'pr' || parsed.kind === 'milestone') {
+      const id = Number(parsed.id);
+      if (Number.isFinite(id)) return { kind: parsed.kind, id };
+    }
+    if (parsed.kind === 'pty' || parsed.kind === 'worktree' || parsed.kind === 'file') {
+      if (typeof parsed.id === 'string' && parsed.id) return { kind: parsed.kind, id: parsed.id };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { kind: 'none' };
+}
 
 export function useDashboardData(issueFilter: IssueFilter) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selection, setSelection] = useState<Selection>({ kind: 'none' });
+  const [selection, setSelection] = useState<Selection>(() => loadPersistedSelection());
+
+  useEffect(() => {
+    if (selection.kind === 'none') {
+      localStorage.removeItem('gitswarm.selection');
+    } else {
+      localStorage.setItem('gitswarm.selection', JSON.stringify(selection));
+    }
+  }, [selection]);
   const [issueBody, setIssueBody] = useState('');
   const [issueDetail, setIssueDetail] = useState<Issue | null>(null);
   const [prDiff, setPrDiff] = useState('');
   const [fileText, setFileText] = useState('');
   const loadTimer = useRef<number | null>(null);
+  const loadSeq = useRef(0);
+  const selectionRef = useRef(selection);
+  const hasAutoSelectedRef = useRef(selection.kind !== 'none');
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
 
   const issues = snapshot?.issues || [];
+  const milestones = snapshot?.milestones || [];
   const prs = snapshot?.prs || [];
   const worktrees = snapshot?.worktrees || [];
   const files = snapshot?.files || [];
@@ -37,6 +71,7 @@ export function useDashboardData(issueFilter: IssueFilter) {
   );
 
   const selectedIssue = selection.kind === 'issue' ? issueDetail || issues.find((it) => it.number === selection.id) || null : null;
+  const selectedMilestone = selection.kind === 'milestone' ? milestones.find((it) => it.number === selection.id) || null : null;
   const selectedPr = selection.kind === 'pr' ? prs.find((it) => it.number === selection.id) || null : null;
   const selectedPty = selection.kind === 'pty'
     ? ptys.find((it) => it.sid === selection.id) || {
@@ -50,16 +85,19 @@ export function useDashboardData(issueFilter: IssueFilter) {
   const selectedFile = selection.kind === 'file' ? files.find((it) => it.name === selection.id) || null : null;
 
   async function load() {
+    const seq = ++loadSeq.current;
     try {
       const next = await fetchSnapshot();
+      if (seq !== loadSeq.current) return;
       setSnapshot(next);
-      if (selection.kind === 'none') {
-        if (visibleIssues.length) setSelection({ kind: 'issue', id: visibleIssues[0].number });
-        else if (next.issues.length) setSelection({ kind: 'issue', id: next.issues[0].number });
+      if (!hasAutoSelectedRef.current && selectionRef.current.kind === 'none') {
+        if (next.issues.length) setSelection({ kind: 'issue', id: next.issues[0].number });
+        else if (next.milestones.length) setSelection({ kind: 'milestone', id: next.milestones[0].number });
         else if (next.prs.length) setSelection({ kind: 'pr', id: next.prs[0].number });
         else if (next.ptys.length) setSelection({ kind: 'pty', id: next.ptys[0].sid });
         else if (next.worktrees.length) setSelection({ kind: 'worktree', id: next.worktrees[0].name });
         else if (next.files.length) setSelection({ kind: 'file', id: next.files[0].name });
+        hasAutoSelectedRef.current = true;
       }
       setError('');
       setLoading(false);
@@ -92,8 +130,8 @@ export function useDashboardData(issueFilter: IssueFilter) {
     if (selection.kind === 'pr' && !snapshot.prs.some((x) => x.number === selection.id) && snapshot.prs.length) {
       setSelection({ kind: 'pr', id: snapshot.prs[0].number });
     }
-    if (selection.kind === 'pty' && !snapshot.ptys.some((x) => x.sid === selection.id) && snapshot.ptys.length) {
-      setSelection({ kind: 'pty', id: snapshot.ptys[0].sid });
+    if (selection.kind === 'milestone' && !snapshot.milestones.some((x) => x.number === selection.id) && snapshot.milestones.length) {
+      setSelection({ kind: 'milestone', id: snapshot.milestones[0].number });
     }
     if (selection.kind === 'worktree' && !snapshot.worktrees.some((x) => x.name === selection.id) && snapshot.worktrees.length) {
       setSelection({ kind: 'worktree', id: snapshot.worktrees[0].name });
@@ -108,6 +146,12 @@ export function useDashboardData(issueFilter: IssueFilter) {
       setSelection({ kind: 'issue', id: visibleIssues[0].number });
     }
   }, [issueFilter, selection, visibleIssues]);
+
+  useEffect(() => {
+    if (selection.kind === 'milestone' && milestones.length && !milestones.some((x) => x.number === selection.id)) {
+      setSelection({ kind: 'milestone', id: milestones[0].number });
+    }
+  }, [milestones, selection]);
 
   useEffect(() => {
     if (selection.kind === 'issue') {
@@ -131,11 +175,12 @@ export function useDashboardData(issueFilter: IssueFilter) {
 
   const counts = useMemo(() => ({
     issues: issues.length,
+    milestones: milestones.length,
     prs: prs.length,
     ptys: ptys.length,
     worktrees: worktrees.length,
     files: files.length,
-  }), [issues.length, prs.length, ptys.length, worktrees.length, files.length]);
+  }), [issues.length, milestones.length, prs.length, ptys.length, worktrees.length, files.length]);
 
   const recentActivity = useMemo(() => {
     const items: ActivityItem[] = [];
@@ -191,6 +236,7 @@ export function useDashboardData(issueFilter: IssueFilter) {
     prDiff,
     fileText,
     issues,
+    milestones,
     prs,
     worktrees,
     files,
@@ -200,6 +246,7 @@ export function useDashboardData(issueFilter: IssueFilter) {
     visibleIssues,
     visibleClaimCount,
     selectedIssue,
+    selectedMilestone,
     selectedPr,
     selectedPty,
     selectedWorktree,

@@ -1,4 +1,4 @@
-import { FileText, GitBranch, GitPullRequest, ListChecks, Rocket, Terminal as TerminalIcon } from 'lucide-react';
+import { FileText, Flag, GitBranch, GitPullRequest, ListChecks, Rocket, Terminal as TerminalIcon } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 import { cn } from '@/lib/utils';
 import type { Pane } from '../types/dashboard';
@@ -7,6 +7,7 @@ type IconType = ComponentType<SVGProps<SVGSVGElement>>;
 
 export const PANES: Array<{ key: Pane; label: string; icon: IconType }> = [
   { key: 'issues', label: 'Issues', icon: ListChecks },
+  { key: 'milestones', label: 'Milestones', icon: Flag },
   { key: 'prs', label: 'PRs', icon: GitPullRequest },
   { key: 'pty', label: 'Terminals', icon: TerminalIcon },
   { key: 'worktrees', label: 'Worktrees', icon: GitBranch },

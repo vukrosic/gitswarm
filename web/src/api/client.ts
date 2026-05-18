@@ -1,4 +1,4 @@
-import type { Agent, FileEntry, Issue, PullRequest, PtyStreamResult, PtySession, Snapshot, Worktree } from '../types';
+import type { Agent, FileEntry, Issue, Milestone, PullRequest, PtyStreamResult, PtySession, RunningWorktree, Snapshot, Worktree } from '../types';
 
 type JsonInit = RequestInit & { json?: unknown };
 
@@ -41,18 +41,31 @@ async function requestText(path: string): Promise<string> {
 }
 
 export async function fetchSnapshot(): Promise<Snapshot> {
-  const [issues, prs, worktrees, files, ptys, agents] = await Promise.all([
+  const [issues, milestones, prs, worktrees, files, ptys, agents] = await Promise.all([
     requestJson<{ issues: Issue[] }>('/api/issues'),
+    requestJson<{ milestones: Milestone[] }>('/api/milestones'),
     requestJson<{ prs: PullRequest[] }>('/api/prs'),
-    requestJson<{ worktrees: Worktree[] }>('/api/worktrees'),
+    requestJson<{ worktrees: Worktree[]; running?: RunningWorktree[] }>('/api/worktrees'),
     requestJson<{ files: FileEntry[] }>('/api/files'),
     requestJson<{ sessions: PtySession[] }>('/api/pty/list'),
     requestJson<{ agents: Agent[]; default: string; code_mtime: number }>('/api/agents'),
   ]);
+  const runningNames = new Map(
+    (worktrees.running || []).map((item) => [item.worktree, item] as const),
+  );
   return {
     issues: issues.issues || [],
+    milestones: milestones.milestones || [],
     prs: prs.prs || [],
-    worktrees: worktrees.worktrees || [],
+    worktrees: (worktrees.worktrees || []).map((worktree) => {
+      const running = runningNames.get(worktree.name);
+      return {
+        ...worktree,
+        running: !!running?.active,
+        issue: running?.issue ? Number(running.issue) : worktree.issue ?? null,
+      };
+    }),
+    running: worktrees.running || [],
     files: files.files || [],
     ptys: ptys.sessions || [],
     agents: agents.agents || [],

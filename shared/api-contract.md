@@ -23,14 +23,22 @@ Source of truth for the `/api/*` HTTP interface. All shapes are JSON.
   "worktrees": [
     {
       "name": "feature-xyz",
+      "path": "/path/to/repo/.agent-worktrees/feature-xyz",
       "branch": "refs/heads/feature-xyz",
+      "head": "abc1234",
       "commits": "abc1234",
       "ahead": 2,
       "behind": 0,
-      "status": "clean"
+      "status": "clean",
+      "dirty": false,
+      "merged": false,
+      "safe_remove": false,
+      "running": false
     }
   ],
-  "running": ["feature-xyz"]
+  "running": [
+    { "issue": "42", "worktree": "feature-xyz", "active": true }
+  ]
 }
 ```
 
@@ -102,10 +110,34 @@ Error: `{"error": "bad num"}` (400)
       "title": "string",
       "state": "open",
       "labels": [],
+      "milestone": { "number": 7, "title": "React UI 2 - Pane parity", "state": "open" },
       "assignees": [],
       "created_at": "2024-05-18T12:00:00Z",
       "updated_at": "2024-05-18T12:00:00Z",
       "in_progress": false
+    }
+  ]
+}
+```
+
+---
+
+## GET /api/milestones
+
+```json
+{
+  "milestones": [
+    {
+      "number": 7,
+      "title": "React UI 2 - Pane parity",
+      "description": "string",
+      "state": "open",
+      "open_issues": 12,
+      "closed_issues": 4,
+      "due_on": "2026-05-31T00:00:00Z",
+      "created_at": "2026-05-01T12:00:00Z",
+      "updated_at": "2026-05-17T09:00:00Z",
+      "url": "https://github.com/owner/repo/milestone/7"
     }
   ]
 }

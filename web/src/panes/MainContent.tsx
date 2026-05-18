@@ -1,7 +1,8 @@
-import type { Agent, Issue, PullRequest, PtySession, Worktree, FileEntry, Snapshot } from '../types';
+import type { Agent, FileEntry, Issue, Milestone, PullRequest, PtySession, Snapshot, Worktree } from '../types';
 import type { Pane } from '../types/dashboard';
 import { FilePane } from './FilePane';
 import { IssuePane } from './IssuePane';
+import { MilestonePane } from './MilestonePane';
 import { LaunchPane } from './LaunchPane';
 import { PrPane } from './PrPane';
 import { TerminalPane } from './TerminalPane';
@@ -19,6 +20,7 @@ interface MainContentProps {
   snapshot: Snapshot | null;
   error: string;
   selectedIssue: Issue | null;
+  selectedMilestone: Milestone | null;
   selectedPr: PullRequest | null;
   selectedPty: PtySession | null;
   selectedWorktree: Worktree | null;
@@ -42,6 +44,7 @@ interface MainContentProps {
   onReviewIssue: (issue: Issue) => void;
   onSaveIssue: (issue: Issue) => void;
   onDeleteIssue: (issue: Issue) => void;
+  onFocusMilestoneIssue: (issue: Issue) => void;
   onReviewPr: (pr: PullRequest) => void;
   onMergePr: (pr: PullRequest) => void;
   onFixCi: (pr: PullRequest) => void;
@@ -69,6 +72,7 @@ export function MainContent(props: MainContentProps) {
     snapshot,
     error,
     selectedIssue,
+    selectedMilestone,
     selectedPr,
     selectedPty,
     selectedWorktree,
@@ -92,6 +96,7 @@ export function MainContent(props: MainContentProps) {
     onReviewIssue,
     onSaveIssue,
     onDeleteIssue,
+    onFocusMilestoneIssue,
     onReviewPr,
     onMergePr,
     onFixCi,
@@ -113,7 +118,7 @@ export function MainContent(props: MainContentProps) {
   } = props;
 
   return (
-    <main className="scrollbar-thin min-h-0 overflow-auto">
+    <main className="scrollbar-thin min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
       {loading && !snapshot ? (
         <div className="rounded-[var(--radius)] border border-border bg-card/60 px-5 py-4 text-sm text-muted-foreground">
           Loading dashboard...
@@ -133,6 +138,16 @@ export function MainContent(props: MainContentProps) {
           onReview={() => onReviewIssue(selectedIssue)}
           onSave={() => onSaveIssue(selectedIssue)}
           onDelete={() => onDeleteIssue(selectedIssue)}
+        />
+      ) : null}
+      {pane === 'milestones' && selectedMilestone ? (
+        <MilestonePane
+          milestone={selectedMilestone}
+          issues={snapshot?.issues || []}
+          onFocusIssue={onFocusMilestoneIssue}
+          onOpenGitHub={() => {
+            if (selectedMilestone.url) window.open(selectedMilestone.url, '_blank', 'noopener,noreferrer');
+          }}
         />
       ) : null}
       {pane === 'prs' && selectedPr ? (

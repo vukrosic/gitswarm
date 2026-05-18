@@ -27,6 +27,9 @@ def dispatch_get(handler, u, qs, send_json_fn):
     if path == "/api/issues":
         from github import list_issues
         return send_json_fn(handler, {"issues": list_issues()})
+    if path == "/api/milestones":
+        from github import list_milestones
+        return send_json_fn(handler, {"milestones": list_milestones()})
     if path == "/api/prs":
         from github import list_prs
         return send_json_fn(handler, {"prs": list_prs()})

@@ -4,6 +4,22 @@ export interface LabelledItem {
   labels: string[];
 }
 
+export interface MilestoneRef {
+  number: number;
+  title: string;
+  state: string;
+  due_on?: string | null;
+}
+
+export interface Milestone extends MilestoneRef {
+  description?: string;
+  open_issues: number;
+  closed_issues: number;
+  created_at?: string;
+  updated_at?: string;
+  url?: string;
+}
+
 export interface Issue extends LabelledItem {
   number: number;
   title: string;
@@ -20,6 +36,7 @@ export interface Issue extends LabelledItem {
   url?: string;
   author?: string;
   comment_count?: number;
+  milestone?: MilestoneRef | null;
 }
 
 export interface PullRequest extends LabelledItem {
@@ -45,12 +62,24 @@ export interface PullRequest extends LabelledItem {
 
 export interface Worktree {
   name: string;
+  path?: string;
   branch: string;
+  head?: string;
   commits: string;
   ahead: number;
   behind: number;
   status: string;
+  dirty?: boolean;
+  merged?: boolean;
   safe_remove?: boolean;
+  running?: boolean;
+  issue?: number | null;
+}
+
+export interface RunningWorktree {
+  issue: string;
+  worktree: string;
+  active: boolean;
 }
 
 export interface FileEntry {
@@ -84,8 +113,10 @@ export interface Agent {
 
 export interface Snapshot {
   issues: Issue[];
+  milestones: Milestone[];
   prs: PullRequest[];
   worktrees: Worktree[];
+  running?: RunningWorktree[];
   files: FileEntry[];
   ptys: PtySession[];
   agents: Agent[];

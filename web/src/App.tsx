@@ -13,7 +13,7 @@ import {
   updateIssue,
   issueCleanup,
 } from './api';
-import type { Issue, PullRequest, PtySession, Worktree } from './types';
+import type { Issue, Milestone, PullRequest, PtySession, Worktree } from './types';
 import type { IssueFilter, LaunchResult, Pane, Selection } from './types/dashboard';
 import { AppHeader } from './components/AppHeader';
 import { DashboardSidebar } from './components/DashboardSidebar';
@@ -22,8 +22,16 @@ import { MainContent } from './panes/MainContent';
 import { useDashboardData } from './hooks/useDashboardData';
 import { usePtyStream } from './hooks/usePtyStream';
 
+function loadPersistedPane(): Pane {
+  const value = localStorage.getItem('gitswarm.pane');
+  if (value === 'issues' || value === 'prs' || value === 'pty' || value === 'worktrees' || value === 'files' || value === 'launch' || value === 'milestones') {
+    return value as Pane;
+  }
+  return 'issues';
+}
+
 export default function App() {
-  const [pane, setPane] = useState<Pane>('issues');
+  const [pane, setPane] = useState<Pane>(() => loadPersistedPane());
   const [issueFilter, setIssueFilter] = useState<IssueFilter>('all');
   const dashboard = useDashboardData(issueFilter);
   const [launchText, setLaunchText] = useState('summarize the first 5 open issues');
@@ -32,7 +40,7 @@ export default function App() {
   const [selectedAgent, setSelectedAgent] = useState(() => localStorage.getItem('gitswarm.agent') || 'codex');
   const [issueTitle, setIssueTitle] = useState('');
   const [issueDraftBody, setIssueDraftBody] = useState('');
-  const [dockPtyId, setDockPtyId] = useState('');
+  const [dockPtyId, setDockPtyId] = useState(() => localStorage.getItem('gitswarm.dockPtyId') || '');
   const [dockCollapsed, setDockCollapsed] = useState(() => localStorage.getItem('gitswarm.terminalDockCollapsed') === '1');
   const codeMtimeRef = useRef(0);
   const {
@@ -48,6 +56,7 @@ export default function App() {
     prDiff,
     fileText,
     issues,
+    milestones,
     prs,
     worktrees,
     files,
@@ -55,8 +64,8 @@ export default function App() {
     agents,
     defaultAgent,
     visibleIssues,
-    visibleClaimCount,
     selectedIssue,
+    selectedMilestone,
     selectedPr,
     selectedPty,
     selectedWorktree,
@@ -83,6 +92,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('gitswarm.terminalDockCollapsed', dockCollapsed ? '1' : '0');
   }, [dockCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('gitswarm.pane', pane);
+  }, [pane]);
+
+  useEffect(() => {
+    localStorage.setItem('gitswarm.dockPtyId', dockPtyId);
+  }, [dockPtyId]);
 
   useEffect(() => {
     const codeMtime = snapshot?.codeMtime || 0;
@@ -144,6 +161,11 @@ export default function App() {
     else focusMainPty(result.sid);
   }
 
+  function focusIssue(issue: Issue) {
+    setPane('issues');
+    setSelection({ kind: 'issue', id: issue.number });
+  }
+
   async function launchIssueShell(issue: Issue, focus = true) {
     const result = await run(`claim #${issue.number}`, async () => {
       return sendIssueLaunch(issue.number, selectedAgent, 'issue-shell') as Promise<LaunchResult>;
@@ -170,6 +192,24 @@ export default function App() {
 
   async function handleReviewIssue(issue: Issue) {
     await launchIssueReview(issue, true);
+  }
+
+  async function handleFocusMilestoneIssue(issue: Issue) {
+    focusIssue(issue);
+  }
+
+  async function handleOpenMilestoneIssues(milestone: Milestone) {
+    const firstIssue = issues.find((issue) => issue.milestone?.number === milestone.number);
+    if (firstIssue) {
+      focusIssue(firstIssue);
+      return;
+    }
+    if (visibleIssues.length) {
+      focusIssue(visibleIssues[0]);
+      return;
+    }
+    setPane('issues');
+    setSelection({ kind: 'none' });
   }
 
   async function handleReviewPr(pr: PullRequest) {
@@ -281,7 +321,7 @@ export default function App() {
 
   async function handleWorktreeShell(w: Worktree) {
     const result = await run(`shell ${w.name}`, async () => {
-      return launchShell(`.agent-worktrees/${w.name}`) as Promise<LaunchResult>;
+      return launchShell(w.path || `.agent-worktrees/${w.name}`) as Promise<LaunchResult>;
     });
     focusLaunchResult(result, 'dock');
   }
@@ -294,7 +334,7 @@ export default function App() {
   }
 
   async function handlePruneMergedWorktrees() {
-    const targets = worktrees.filter((worktree) => worktree.safe_remove);
+    const targets = worktrees.filter((worktree) => worktree.safe_remove && !worktree.running);
     if (!targets.length) return;
     if (!confirm(`Prune ${targets.length} merged worktree${targets.length === 1 ? '' : 's'}?`)) return;
     await run('prune merged worktrees', async () => {
@@ -361,6 +401,19 @@ export default function App() {
             {selectedIssueActions}
           </>
         );
+      case 'milestones':
+        return (
+          <>
+            <button onClick={() => void (selectedMilestone ? handleOpenMilestoneIssues(selectedMilestone) : undefined)}>
+              Open issues
+            </button>
+            {selectedMilestone?.url ? (
+              <button onClick={() => window.open(selectedMilestone.url, '_blank', 'noopener,noreferrer')}>
+                GitHub
+              </button>
+            ) : null}
+          </>
+        );
       case 'pty':
         return (
           <>
@@ -419,9 +472,9 @@ export default function App() {
           pane={pane}
           counts={counts}
           visibleIssues={visibleIssues}
-          visibleClaimCount={visibleClaimCount}
           issueFilter={issueFilter}
           selection={selection}
+          milestones={milestones}
           prs={prs}
           ptys={ptys}
           worktrees={worktrees}
@@ -437,6 +490,7 @@ export default function App() {
           onClaimIssue={(issue) => void handleClaim(issue)}
           onReviewIssue={(issue) => void handleReviewIssue(issue)}
           onIssueTerminal={(issue) => void launchIssueShell(issue)}
+          onSelectMilestoneIssue={(milestone) => void handleOpenMilestoneIssues(milestone)}
           onReviewPr={(pr) => void handleReviewPr(pr)}
           onMergePr={(pr) => void handleMergePr(pr)}
           onFixCi={(pr) => void handleFixCi(pr)}
@@ -452,6 +506,7 @@ export default function App() {
           snapshot={snapshot}
           error={error}
           selectedIssue={selectedIssue}
+          selectedMilestone={selectedMilestone}
           selectedPr={selectedPr}
           selectedPty={selectedPty}
           selectedWorktree={selectedWorktree}
@@ -475,6 +530,7 @@ export default function App() {
           onReviewIssue={(issue) => void handleReviewIssue(issue)}
           onSaveIssue={(issue) => void handleEditIssue(issue)}
           onDeleteIssue={(issue) => void handleDeleteIssue(issue)}
+          onFocusMilestoneIssue={(issue) => void handleFocusMilestoneIssue(issue)}
           onReviewPr={(pr) => void handleReviewPr(pr)}
           onMergePr={(pr) => void handleMergePr(pr)}
           onFixCi={(pr) => void handleFixCi(pr)}

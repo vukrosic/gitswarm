@@ -54,6 +54,12 @@ export function TerminalPane({
       <Textarea
         value={input}
         onChange={(event) => onInputChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            onSend();
+          }
+        }}
         placeholder="Type shell input and hit Send"
         className="min-h-[96px] resize-y font-mono"
       />

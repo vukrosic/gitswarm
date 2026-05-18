@@ -143,7 +143,7 @@ export function TerminalDock({
     }
     if (event.key === 'Enter') {
       event.preventDefault();
-      onType('\n');
+      onType(event.shiftKey ? '\n' : '\r');
       return;
     }
     if (event.key === 'Backspace') {
@@ -263,7 +263,7 @@ export function TerminalDock({
                   {displayLog || 'Waiting for output...'}
                 </pre>
                 <div className="text-[11px] text-muted-foreground">
-                  Click here and type. Enter sends, Backspace deletes, Ctrl-C interrupts.
+                  Click here and type. Enter sends, Shift+Enter for newline, Ctrl-C interrupts.
                 </div>
                 <div className="text-[11px] text-muted-foreground">
                   offset {offset} · {alive ? 'streaming' : 'stopped'}

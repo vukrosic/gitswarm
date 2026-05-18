@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Agent, FileEntry, Issue, PullRequest, PtySession, Worktree } from '../types';
+import type { Agent, FileEntry, Issue, Milestone, PullRequest, PtySession, Worktree } from '../types';
 import type { IssueFilter, Pane, Selection } from '../types/dashboard';
 import { ago } from '../lib/time';
 import { issueLabel, prLabel, sessionLabel } from '../lib/labels';
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 
 interface Counts {
   issues: number;
+  milestones: number;
   prs: number;
   ptys: number;
   worktrees: number;
@@ -18,6 +19,7 @@ interface Counts {
 
 type SidebarEntry =
   | { kind: 'issue'; key: string; label: string; meta: string; tone: 'default' | 'success' | 'warning' | 'muted'; item: Issue }
+  | { kind: 'milestone'; key: string; label: string; meta: string; tone: 'default' | 'success' | 'warning' | 'muted'; item: Milestone }
   | { kind: 'pr'; key: string; label: string; meta: string; tone: 'default' | 'success' | 'warning' | 'destructive'; item: PullRequest }
   | { kind: 'pty'; key: string; label: string; meta: string; tone: 'default' | 'success' | 'muted'; item: PtySession }
   | { kind: 'worktree'; key: string; label: string; meta: string; tone: 'default'; item: Worktree }
@@ -28,9 +30,9 @@ interface DashboardSidebarProps {
   pane: Pane;
   counts: Counts;
   visibleIssues: Issue[];
-  visibleClaimCount: number;
   issueFilter: IssueFilter;
   selection: Selection;
+  milestones: Milestone[];
   prs: PullRequest[];
   ptys: PtySession[];
   worktrees: Worktree[];
@@ -46,6 +48,7 @@ interface DashboardSidebarProps {
   onClaimIssue: (issue: Issue) => void;
   onReviewIssue: (issue: Issue) => void;
   onIssueTerminal: (issue: Issue) => void;
+  onSelectMilestoneIssue: (milestone: Milestone) => void;
   onReviewPr: (pr: PullRequest) => void;
   onMergePr: (pr: PullRequest) => void;
   onFixCi: (pr: PullRequest) => void;
@@ -68,9 +71,9 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
     pane,
     counts,
     visibleIssues,
-    visibleClaimCount,
     issueFilter,
     selection,
+    milestones,
     prs,
     ptys,
     worktrees,
@@ -86,6 +89,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
     onClaimIssue,
     onReviewIssue,
     onIssueTerminal,
+    onSelectMilestoneIssue,
     onReviewPr,
     onMergePr,
     onFixCi,
@@ -110,11 +114,20 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
             kind: 'issue',
             key: String(item.number),
             label: issueLabel(item),
-            meta: item.claim_next ? 'claim-next' : item.in_progress ? 'in-progress' : item.parked ? 'parked' : item.state,
+            meta: `${item.milestone?.title ? `${item.milestone.title} · ` : ''}${item.claim_next ? 'claim-next' : item.in_progress ? 'in-progress' : item.parked ? 'parked' : item.state}`,
             tone,
             item,
           };
         });
+      case 'milestones':
+        return milestones.map((item): SidebarEntry => ({
+          kind: 'milestone',
+          key: String(item.number),
+          label: item.title,
+          meta: `${item.state} · ${item.open_issues} open / ${item.closed_issues} closed`,
+          tone: item.state === 'open' ? 'success' : 'muted',
+          item,
+        }));
       case 'prs':
         return prs.map((item): SidebarEntry => {
           const tone: SidebarEntry['tone'] =
@@ -141,7 +154,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
           kind: 'worktree',
           key: item.name,
           label: item.name,
-          meta: `${item.status} · ${item.branch}`,
+          meta: `${item.running ? 'running · ' : ''}${item.status} · ${item.branch}`,
           tone: 'default',
           item,
         }));
@@ -171,6 +184,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
   function isSelected(entry: SidebarEntry) {
     return (
       (entry.kind === 'issue' && selection.kind === 'issue' && selection.id === Number(entry.key)) ||
+      (entry.kind === 'milestone' && selection.kind === 'milestone' && selection.id === Number(entry.key)) ||
       (entry.kind === 'pr' && selection.kind === 'pr' && selection.id === Number(entry.key)) ||
       (entry.kind === 'pty' && selection.kind === 'pty' && selection.id === entry.key) ||
       (entry.kind === 'worktree' && selection.kind === 'worktree' && selection.id === entry.key) ||
@@ -181,6 +195,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
 
   function focusEntry(entry: SidebarEntry) {
     if (entry.kind === 'issue') onSelect({ kind: 'issue', id: Number(entry.key) });
+    else if (entry.kind === 'milestone') onSelect({ kind: 'milestone', id: Number(entry.key) });
     else if (entry.kind === 'pr') onSelect({ kind: 'pr', id: Number(entry.key) });
     else if (entry.kind === 'pty') onFocusPty(entry.item);
     else if (entry.kind === 'worktree') onSelect({ kind: 'worktree', id: entry.key });
@@ -188,41 +203,21 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
     else onSelectAgent(entry.key);
   }
 
-  const summary = [
-    { label: 'issues', value: counts.issues },
-    { label: 'visible', value: visibleIssues.length },
-    { label: 'claimable', value: visibleClaimCount },
-    { label: 'prs', value: counts.prs },
-    { label: 'terminals', value: counts.ptys },
-    { label: 'worktrees', value: counts.worktrees },
-  ];
-
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden rounded-[var(--radius)] border border-border bg-gradient-to-b from-card/90 to-background/95 shadow-[0_24px_70px_hsl(0_0%_0%/0.42)] backdrop-blur-xl">
       <PaneTabs
         value={pane}
         onChange={onPaneChange}
-        counts={{
-          issues: counts.issues,
-          prs: counts.prs,
-          pty: counts.ptys,
-          worktrees: counts.worktrees,
-          files: counts.files,
+          counts={{
+            issues: counts.issues,
+            milestones: counts.milestones,
+            prs: counts.prs,
+            pty: counts.ptys,
+            worktrees: counts.worktrees,
+            files: counts.files,
           launch: agents.length,
         }}
       />
-
-      <div className="flex flex-wrap gap-1.5 px-3 pt-3 text-[11px] text-muted-foreground">
-        {summary.map((item) => (
-          <span
-            key={item.label}
-            className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-card/40 px-2 py-0.5 tabular-nums"
-          >
-            <strong className="font-semibold text-foreground">{item.value}</strong>
-            {item.label}
-          </span>
-        ))}
-      </div>
 
       {pane === 'issues' ? <IssueFilters value={issueFilter} onChange={onIssueFilterChange} /> : null}
 
@@ -232,7 +227,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
         </div>
       ) : null}
 
-      <div className="scrollbar-thin grid gap-1.5 overflow-auto p-3">
+      <div className="scrollbar-thin grid min-w-0 grid-cols-1 gap-1.5 overflow-y-auto overflow-x-hidden p-3">
         {activeItems.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border/60 bg-card/30 p-4 text-center text-xs text-muted-foreground">
             Nothing here yet.
@@ -254,7 +249,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
                 }
               }}
               className={cn(
-                'group relative flex cursor-pointer flex-col gap-2 rounded-2xl border px-3 py-2.5 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                'group relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border px-3 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                 selected
                   ? 'border-primary/70 bg-gradient-to-b from-primary/15 to-background/40 shadow-[inset_3px_0_0_hsl(var(--primary)),0_12px_26px_hsl(0_0%_0%/0.25)]'
                   : 'border-border/80 bg-card/60 hover:-translate-y-px hover:border-primary/40 hover:bg-card',
@@ -263,7 +258,10 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className={cn('h-2 w-2 shrink-0 rounded-full', TONE_DOT[entry.tone] || TONE_DOT.default)} />
-                  <strong className="truncate text-[13px] font-medium leading-snug tracking-tight text-foreground">
+                  <strong
+                    className="block min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap py-0.5 text-[13px] font-medium leading-[1.5] tracking-tight text-foreground"
+                    title={entry.label}
+                  >
                     {entry.label}
                   </strong>
                 </div>
@@ -272,7 +270,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
                 </span>
               </div>
 
-              {entry.kind === 'issue' || entry.kind === 'pr' || entry.kind === 'pty' || entry.kind === 'worktree' ? (
+              {entry.kind === 'issue' || entry.kind === 'pr' || entry.kind === 'pty' || entry.kind === 'worktree' || entry.kind === 'milestone' ? (
                 <div className="flex flex-wrap gap-1">
                   {entry.kind === 'issue' ? (
                     <>
@@ -298,8 +296,20 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
                   {entry.kind === 'worktree' ? (
                     <>
                       <RowButton onClick={(e) => { e.stopPropagation(); onWorktreeShell(entry.item); }}>Shell</RowButton>
-                      <RowButton danger onClick={(e) => { e.stopPropagation(); onWorktreeRemove(entry.item); }}>Remove</RowButton>
+                      <RowButton
+                        danger
+                        disabled={!entry.item.safe_remove || !!entry.item.running}
+                        title={entry.item.running ? 'Running worktrees should be closed before removal' : !entry.item.safe_remove ? 'Only merged, clean worktrees can be removed' : undefined}
+                        onClick={(e) => { e.stopPropagation(); onWorktreeRemove(entry.item); }}
+                      >
+                        Remove
+                      </RowButton>
                     </>
+                  ) : null}
+                  {entry.kind === 'milestone' ? (
+                    <RowButton onClick={(e) => { e.stopPropagation(); onSelectMilestoneIssue(entry.item); }}>
+                      Open issues
+                    </RowButton>
                   ) : null}
                 </div>
               ) : null}
@@ -314,10 +324,14 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
 function RowButton({
   children,
   danger,
+  disabled,
+  title,
   onClick,
 }: {
   children: ReactNode;
   danger?: boolean;
+  disabled?: boolean;
+  title?: string;
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
@@ -326,6 +340,8 @@ function RowButton({
       variant={danger ? 'danger' : 'outline'}
       size="sm"
       className="h-6 px-2 text-[10px]"
+      disabled={disabled}
+      title={title}
       onClick={onClick}
     >
       {children}

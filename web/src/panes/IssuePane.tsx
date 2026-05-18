@@ -15,24 +15,43 @@ interface IssuePaneProps {
 
 export function IssuePane({ issue, body, onBodyChange: _onBodyChange, onClaim, onReview, onSave, onDelete }: IssuePaneProps) {
   return (
-    <PaneShell>
+    <PaneShell className="min-w-0">
       <PaneHeader
         eyebrow={`Issue #${issue.number}`}
         title={issue.title}
-        chips={issue.labels}
+        chips={[
+          ...issue.labels,
+          issue.milestone?.title ? `milestone: ${issue.milestone.title}` : '',
+        ].filter(Boolean) as string[]}
         actions={
           <>
-            <Button variant="primary" size="sm" onClick={onClaim}>Claim</Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onClaim}
+              title="Spawn an agent (Claude/Codex) in a fresh worktree branch for this issue and drop you into its terminal"
+            >
+              Claim
+            </Button>
             <Button variant="outline" size="sm" onClick={onReview}>Review</Button>
+            {issue.url ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(issue.url, '_blank', 'noopener,noreferrer')}
+              >
+                Open on GitHub
+              </Button>
+            ) : null}
             <Button variant="outline" size="sm" onClick={onSave}>Save body</Button>
             <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
           </>
         }
       />
-      <div className="rounded-2xl border border-border/70 bg-background/60 p-5">
+      <div className="min-w-0 rounded-2xl border border-border/70 bg-background/60 p-5">
         <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Rendered</div>
         <div
-          className="markdown text-sm leading-relaxed text-foreground"
+          className="markdown break-words text-sm leading-relaxed text-foreground"
           dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
         />
       </div>

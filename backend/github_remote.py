@@ -46,6 +46,23 @@ def _issue_label_suggestions(title, body):
     return suggestions[:3]
 
 
+def _normalize_milestone(raw):
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "number": raw.get("number"),
+        "title": raw.get("title") or "",
+        "description": raw.get("description") or "",
+        "state": raw.get("state") or "",
+        "open_issues": raw.get("open_issues", raw.get("openIssues", 0)) or 0,
+        "closed_issues": raw.get("closed_issues", raw.get("closedIssues", 0)) or 0,
+        "due_on": raw.get("due_on", raw.get("dueOn")) or None,
+        "created_at": raw.get("created_at", raw.get("createdAt")) or "",
+        "updated_at": raw.get("updated_at", raw.get("updatedAt")) or "",
+        "url": raw.get("url") or raw.get("html_url") or "",
+    }
+
+
 def gh_error(exc):
     if isinstance(exc, subprocess.CalledProcessError):
         msg = (exc.stderr or exc.output or "").strip()
@@ -156,6 +173,7 @@ def fetch_issue_meta(issue_num):
             for label in raw.get("labels", [])
             if isinstance(label, dict) and label.get("name")
         ],
+        "milestone": _normalize_milestone(raw.get("milestone")),
     }
 
 
@@ -230,7 +248,7 @@ def list_issues():
     try:
         out = subprocess.run(
             ["gh", "issue", "list", "--state", "open",
-             "--limit", "100", "--json", "number,title,body,labels,url,author,assignees,comments,createdAt,updatedAt,state"],
+             "--limit", "100", "--json", "number,title,body,labels,url,author,assignees,comments,createdAt,updatedAt,state,milestone"],
             capture_output=True, text=True, timeout=20, check=True,
         ).stdout
         issues = json.loads(out)
@@ -241,6 +259,7 @@ def list_issues():
             it["claim_next"] = "claim-next" in it["labels"]
             it["parked"] = "needs-validation" in it["labels"]
             it["body"] = it.get("body") or ""
+            it["milestone"] = _normalize_milestone(it.get("milestone"))
             it["summary"] = _text_preview(it["body"], 180) or "no body yet"
             it["suggested_labels"] = _issue_label_suggestions(it.get("title") or "", it["body"])
             author = it.get("author") or {}
@@ -248,6 +267,26 @@ def list_issues():
             it["comment_count"] = it.get("comments") or 0
         _ISSUES_CACHE.update({"ts": time.time(), "data": issues})
         return issues
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
+def list_milestones():
+    try:
+        slug = github_repo_slug()
+        raw = gh_api_json(f"repos/{slug}/milestones?state=all&per_page=100", timeout=20, retries=2)
+        milestones = []
+        for item in raw if isinstance(raw, list) else []:
+            milestone = _normalize_milestone(item)
+            if milestone:
+                milestones.append(milestone)
+        milestones.sort(key=lambda item: (
+            0 if item.get("state") == "open" else 1,
+            item.get("due_on") or "9999-12-31T23:59:59Z",
+            item.get("number") or 0,
+            item.get("title") or "",
+        ))
+        return milestones
     except Exception as e:
         return [{"error": str(e)}]
 
