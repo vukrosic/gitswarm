@@ -487,6 +487,7 @@ async function listPRs() {
           <div class="badges">${ready ? '<span class="b ready">ready</span>' : ''}${draftBadge}${decBadge}${ciBadge}</div>
           ${checks}
           <div class="row">
+            <button onclick="window.open('${escapeHtml(pr.url)}', '_blank')" title="Open PR #${pr.number} on GitHub">↗ open</button>
             <button class="review${reviewed ? ' done' : ''}" onclick="reviewPR(${pr.number})" title="${escapeHtml(reviewTitle)}">${reviewed ? '🔁 re-review' : '🔍 review'}</button>
             <button class="merge interactive" onclick="mergeInteractive(${pr.number})" title="Open an interactive agent session that merges PR #${pr.number} into main. If the squash-merge fails on conflicts, the agent rebases onto main, resolves conflicts (asking you if uncertain), pushes, and retries. Push notification fires when it needs you.">🟢 agent merge</button>
             <button class="fixci" onclick="fixCI(${pr.number})" title="${escapeHtml(fixTitle)}">${pr.ci === 'fail' ? '🩹 fix CI' : '🩹 inspect CI'}</button>
