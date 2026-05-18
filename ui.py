@@ -1515,6 +1515,7 @@ async function replay() {
 document.getElementById('followBtn').onclick = () => { if (termAttached) term.scrollToBottom(); };
 document.getElementById('replayBtn').onclick = replay;
 document.getElementById('clearBtn').onclick = () => { if (termAttached) { term.reset(); cursor = view && view.kind === 'pty' ? cursor : 0; } };
+document.getElementById('dock-open-btn').onclick = toggleTerminalDock;
 document.getElementById('dockCloseBtn').onclick = closeCurrentTerminal;
 document.getElementById('dockNewBtn').onclick = newAgentFromDock;
 document.getElementById('dockToggleBtn').onclick = toggleTerminalDock;
