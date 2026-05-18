@@ -231,7 +231,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
     </select>
   </label>
   <span id="lastUpdate">—</span>
-  <span>Live terminals stream via long-poll · Log files refresh every 800ms when followed</span>
+  <span>Live · 800ms</span>
 </header>
 <main>
   <aside>
@@ -265,9 +265,9 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
     </div>
     <div class="sidebar-panel" data-sidebar-panel="terminals">
       <h2>Needs me <span class="count" id="needsCount"></span></h2>
-      <div id="needsme"><div class="empty">waiting for an idle agent session…</div></div>
-      <h2>Live terminals <span class="count" id="ptyCount"></span></h2>
-      <div id="ptys"><div class="empty">no terminals · click + new shell</div></div>
+      <div id="needsme"><div class="empty">waiting…</div></div>
+      <h2>Terminals <span class="count" id="ptyCount"></span></h2>
+      <div id="ptys"><div class="empty">none</div></div>
     </div>
     <div class="sidebar-panel" data-sidebar-panel="worktrees">
       <h2>Active worktrees <span class="count" id="worktreeCount"></span>
@@ -306,12 +306,12 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
   </div>
   <section>
     <div id="tab-bar"></div>
-    <h2><span id="title">pick a file or open a shell →</span>
+    <h2><span id="title">pick something →</span>
       <span class="ctl">
-        <button id="followBtn" title="Jump to the bottom of the buffer (xterm auto-tails once you're there)">↓ bottom</button>
-        <button id="replayBtn" title="Re-play a completed log from byte zero with a typing animation (file mode only).">replay</button>
-        <button id="clearBtn" title="Clear the terminal pane. Doesn't kill the session; output keeps streaming.">clear</button>
-        <button id="killBtn" title="Kill the current PTY session">close ✕</button>
+        <button id="followBtn" title="Jump to the bottom">↓</button>
+        <button id="replayBtn" title="Replay log from start">replay</button>
+        <button id="clearBtn" title="Clear the terminal pane">clear</button>
+        <button id="killBtn" title="Kill the current PTY session">✕</button>
       </span>
     </h2>
     <div id="pr-bar"></div>
@@ -642,7 +642,7 @@ function closeIssueView() {
   stopStreams();
   view = null;
   inputHandler = null;
-  document.getElementById('title').textContent = 'pick a file or open a shell →';
+  document.getElementById('title').textContent = 'pick something →';
   document.getElementById('pr-bar').className = '';
   showMainPane('terminal');
   renderTabBar();
@@ -683,7 +683,7 @@ async function listFiles() {
     const r = await fetch('/api/files');
     const data = await r.json();
     const el = document.getElementById('files');
-    if (!data.files.length) { el.innerHTML = '<div class="empty">no logs yet</div>'; }
+    if (!data.files.length) { el.innerHTML = '<div class="empty">none</div>'; }
     else {
       el.innerHTML = data.files.map(f => {
         const cls = (view && view.kind === 'file' && view.name === f.name) ? 'file active' : 'file';
@@ -718,7 +718,7 @@ async function listWorktrees() {
         const status = w.status || (w.dirty ? 'dirty' : 'clean');
         const safeRemove = !!w.safe_remove;
         const statusBadge = status === 'merge candidate'
-          ? '<span class="lbl" style="background:#0e3a1a;color:#56d364;">merge candidate</span>'
+          ? '<span class="lbl" style="background:#0e3a1a;color:#56d364;">merge</span>'
           : status === 'merged'
           ? '<span class="lbl" style="background:#0d1117;color:#8b949e;">merged</span>'
           : status === 'dirty'
@@ -727,7 +727,10 @@ async function listWorktrees() {
         const removeBtn = safeRemove
           ? `<button onclick="removeWorktree('${safe}')" title="Safely remove this worktree while keeping the branch for later restoration">🧹 prune</button>`
           : '';
-        return `<div class="worktree ${runningSet.has(w.name) ? 'live' : ''}"><div class="name">${w.name} ${statusBadge}</div><div class="commits">${w.commits || 'no commits yet'} · ${w.branch || 'no branch'} · ${status}${w.ahead ? ` · +${w.ahead}` : ''}${runningSet.has(w.name) ? ' · agent active' : ''}</div><button onclick="openWorktreeShell('${safe}')" title="Open an interactive shell in this worktree">🖥️ open shell</button>${removeBtn}</div>`;
+        const parts = [w.commits || 'no commits', w.branch || 'no branch', status];
+        if (w.ahead) parts.push(`+${w.ahead}`);
+        if (runningSet.has(w.name)) parts.push('active');
+        return `<div class="worktree ${runningSet.has(w.name) ? 'live' : ''}"><div class="name">${w.name} ${statusBadge}</div><div class="commits">${parts.join(' · ')}</div><button onclick="openWorktreeShell('${safe}')" title="Open an interactive shell in this worktree">🖥️ shell</button>${removeBtn}</div>`;
       }).join('');
     }
   } catch(e) { console.error(e); }
@@ -773,7 +776,7 @@ function renderIssues() {
   const filtered = issueFilter === 'all'
     ? allIssues
     : allIssues.filter(it => it.labels.includes(issueFilter));
-  if (!filtered.length) { el.innerHTML = `<div class="empty">no issues match "${issueFilter}"</div>`; return; }
+  if (!filtered.length) { el.innerHTML = `<div class="empty">no issues</div>`; return; }
   el.innerHTML = filtered.map(it => {
     const live = issueSessionFor(it.number);
     const claimed = !!live || !!it.in_progress;
@@ -1432,7 +1435,7 @@ async function listPtys() {
       document.getElementById('needsCount').textContent = '0 idle';
       renderNeedsMe();
       renderActivity();
-      el.innerHTML = '<div class="empty">no terminals · click + new shell</div>';
+      el.innerHTML = '<div class="empty">none</div>';
       return;
     }
     el.innerHTML = sessions.map(s => {
@@ -1462,7 +1465,7 @@ function renderNeedsMe() {
   const el = document.getElementById('needsme');
   const sessions = allPtys.filter(s => s.alive && s.last_output && (Date.now() - s.last_output * 1000) > 30000);
   if (!sessions.length) {
-    el.innerHTML = '<div class="empty">nothing waiting right now</div>';
+    el.innerHTML = '<div class="empty">waiting…</div>';
     return;
   }
   el.innerHTML = sessions.map(s => {
@@ -1710,7 +1713,7 @@ async function deletePty(sid, label) {
       stopStreams();
       view = null;
       inputHandler = null;
-      document.getElementById('title').textContent = 'pick a file or open a shell →';
+      document.getElementById('title').textContent = 'pick something →';
       document.getElementById('pr-bar').className = '';
       document.querySelectorAll('aside .pty').forEach(el => el.classList.remove('active'));
       term.reset();
