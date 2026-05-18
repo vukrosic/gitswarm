@@ -9,7 +9,11 @@
   "files": [
     "bin",
     "dashboard.py",
+    "server.py",
+    "github.py",
+    "ui.py",
     "orchestrate.sh",
+    "SELF_HOSTING.md",
     "prompts",
     "README.md"
   ],
@@ -27,7 +31,7 @@
   "scripts": {
     "start": "node ./bin/gitswarm.js",
     "dashboard": "node ./bin/gitswarm.js",
-    "test": "python3 -m py_compile ./dashboard.py ./server.py ./github.py ./ui.py && bash -n ./orchestrate.sh && node --check ./bin/gitswarm.js && bash ./scripts/test-repo-arg.sh"
+    "test": "python3 -m py_compile ./dashboard.py ./server.py ./github.py ./ui.py && bash -n ./orchestrate.sh && node --check ./bin/gitswarm.js && bash ./scripts/test-repo-arg.sh && bash ./scripts/test-init-doctor.sh"
   },
   "keywords": [
     "github",

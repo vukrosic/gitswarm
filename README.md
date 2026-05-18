@@ -32,6 +32,13 @@ From anywhere, point it at a repo explicitly:
 gitswarm --repo /path/to/your/repo
 ```
 
+Set up repo defaults first:
+
+```bash
+gitswarm init --repo /path/to/your/repo
+gitswarm doctor --repo /path/to/your/repo
+```
+
 For dogfooding `gitswarm` on its own repo, read [SELF_HOSTING.md](./SELF_HOSTING.md).
 
 ## Local layout
