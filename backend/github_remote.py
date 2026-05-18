@@ -120,12 +120,75 @@ def gh_api_json(path, timeout=20, retries=2):
     return json.loads(run_gh(["api", path], timeout=timeout, retries=retries))
 
 
+def gh_api_paginated(path, timeout=30, retries=2):
+    try:
+        raw = run_gh(["api", "--paginate", "--slurp", path], timeout=timeout, retries=retries)
+        pages = json.loads(raw)
+        if not isinstance(pages, list):
+            return []
+        out = []
+        for page in pages:
+            if isinstance(page, list):
+                out.extend(page)
+            elif page:
+                out.append(page)
+        return out
+    except Exception:
+        raw = gh_api_json(path, timeout=timeout, retries=retries)
+        return raw if isinstance(raw, list) else []
+
+
 def gh_api_text(path, headers=None, timeout=20, retries=2):
     args = ["api"]
     for header in headers or []:
         args.extend(["-H", header])
     args.append(path)
     return run_gh(args, timeout=timeout, retries=retries)
+
+
+def _user_login(raw):
+    user = raw.get("user") or raw.get("author") or {}
+    if isinstance(user, dict):
+        return user.get("login") or ""
+    return str(user or "")
+
+
+def _normalize_comment(raw):
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "id": raw.get("id"),
+        "author": _user_login(raw),
+        "body": raw.get("body") or "",
+        "url": raw.get("html_url") or raw.get("url") or "",
+        "created_at": raw.get("created_at") or raw.get("createdAt") or "",
+        "updated_at": raw.get("updated_at") or raw.get("updatedAt") or "",
+    }
+
+
+def _normalize_review(raw):
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "id": raw.get("id"),
+        "author": _user_login(raw),
+        "state": raw.get("state") or "",
+        "body": raw.get("body") or "",
+        "url": raw.get("html_url") or raw.get("url") or "",
+        "submitted_at": raw.get("submitted_at") or raw.get("submittedAt") or "",
+    }
+
+
+def _normalize_review_comment(raw):
+    comment = _normalize_comment(raw)
+    if not comment:
+        return None
+    comment.update({
+        "path": raw.get("path") or "",
+        "line": raw.get("line") or raw.get("original_line"),
+        "diff_hunk": raw.get("diff_hunk") or "",
+    })
+    return comment
 
 
 def fetch_pr_meta(pr_num: int):
@@ -137,17 +200,24 @@ def fetch_pr_meta(pr_num: int):
         "body": raw.get("body") or "",
         "url": raw.get("html_url"),
         "headRefName": (raw.get("head") or {}).get("ref") or "",
+        "head": (raw.get("head") or {}).get("ref") or "",
+        "base": (raw.get("base") or {}).get("ref") or "",
+        "author": ((raw.get("user") or {}).get("login") or ""),
         "isDraft": bool(raw.get("draft")),
         "mergeable": raw.get("mergeable"),
         "state": raw.get("state"),
         "mergedAt": raw.get("merged_at"),
         "reviewDecision": "",
+        "comments": [],
+        "reviews": [],
+        "review_comments": [],
     }
     try:
-        reviews = gh_api_json(f"repos/{slug}/pulls/{pr_num}/reviews", timeout=20, retries=1)
+        reviews = gh_api_paginated(f"repos/{slug}/pulls/{pr_num}/reviews?per_page=100", timeout=30, retries=1)
+        meta["reviews"] = [item for item in (_normalize_review(review) for review in reviews) if item]
         latest_by_user = {}
-        for review in reviews if isinstance(reviews, list) else []:
-            user = ((review.get("user") or {}).get("login") or str(review.get("user") or ""))
+        for review in meta["reviews"]:
+            user = review.get("author") or ""
             state = (review.get("state") or "").upper()
             if user and state in {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}:
                 latest_by_user[user] = state
@@ -158,21 +228,49 @@ def fetch_pr_meta(pr_num: int):
             meta["reviewDecision"] = "APPROVED"
     except Exception:
         pass
+    try:
+        comments = gh_api_paginated(f"repos/{slug}/issues/{pr_num}/comments?per_page=100", timeout=30, retries=1)
+        meta["comments"] = [item for item in (_normalize_comment(comment) for comment in comments) if item]
+    except Exception:
+        pass
+    try:
+        review_comments = gh_api_paginated(f"repos/{slug}/pulls/{pr_num}/comments?per_page=100", timeout=30, retries=1)
+        meta["review_comments"] = [
+            item for item in (_normalize_review_comment(comment) for comment in review_comments) if item
+        ]
+    except Exception:
+        pass
     return meta
 
 
 def fetch_issue_meta(issue_num):
     slug = github_repo_slug()
     raw = gh_api_json(f"repos/{slug}/issues/{issue_num}", timeout=15, retries=2)
+    labels = [
+        label.get("name")
+        for label in raw.get("labels", [])
+        if isinstance(label, dict) and label.get("name")
+    ]
+    comments = gh_api_paginated(f"repos/{slug}/issues/{issue_num}/comments?per_page=100", timeout=30, retries=1)
+    body = raw.get("body") or ""
     return {
-        "body": raw.get("body") or "",
+        "number": raw.get("number"),
+        "body": body,
         "title": raw.get("title") or "",
+        "state": raw.get("state") or "",
         "url": raw.get("html_url") or "",
-        "labels": [
-            label.get("name")
-            for label in raw.get("labels", [])
-            if isinstance(label, dict) and label.get("name")
-        ],
+        "labels": labels,
+        "assignees": [a.get("login") for a in raw.get("assignees", []) if isinstance(a, dict) and a.get("login")],
+        "author": ((raw.get("user") or {}).get("login") or ""),
+        "created_at": raw.get("created_at") or "",
+        "updated_at": raw.get("updated_at") or "",
+        "in_progress": "in-progress" in labels,
+        "claim_next": "claim-next" in labels,
+        "parked": "needs-validation" in labels,
+        "summary": _text_preview(body, 180) or "no body yet",
+        "suggested_labels": _issue_label_suggestions(raw.get("title") or "", body),
+        "comment_count": raw.get("comments") or 0,
+        "comments": [item for item in (_normalize_comment(comment) for comment in comments) if item],
         "milestone": _normalize_milestone(raw.get("milestone")),
     }
 
@@ -297,7 +395,7 @@ def list_prs():
     try:
         out = subprocess.run(
             ["gh", "pr", "list", "--state", "open", "--limit", "60",
-             "--json", "number,title,body,isDraft,headRefName,url,reviewDecision,mergeable,labels,statusCheckRollup,comments,author,createdAt,updatedAt"],
+             "--json", "number,title,body,isDraft,headRefName,baseRefName,url,reviewDecision,mergeable,labels,statusCheckRollup,comments,author,createdAt,updatedAt"],
             capture_output=True, text=True, timeout=20, check=True,
         ).stdout
         prs = json.loads(out)
@@ -326,6 +424,8 @@ def list_prs():
             pr["pending_checks"] = pending_checks
             pr["body"] = pr.get("body") or ""
             pr["summary"] = _text_preview(pr["body"], 180) or "no body yet"
+            pr["head"] = pr.get("headRefName") or ""
+            pr["base"] = pr.get("baseRefName") or ""
             author = pr.get("author") or {}
             pr["author"] = author.get("login") if isinstance(author, dict) else ""
             del pr["statusCheckRollup"]

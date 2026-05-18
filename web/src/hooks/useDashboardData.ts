@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchFile, fetchPrDiff, fetchSnapshot } from '../api';
-import type { Issue, Milestone, Snapshot } from '../types';
+import { fetchFile, fetchIssue, fetchPr, fetchPrDiff, fetchSnapshot } from '../api';
+import type { Issue, Milestone, PullRequest, Snapshot } from '../types';
 import type { ActivityItem, IssueFilter, Selection } from '../types/dashboard';
 
 function loadPersistedSelection(): Selection {
@@ -37,6 +37,7 @@ export function useDashboardData(issueFilter: IssueFilter) {
   }, [selection]);
   const [issueBody, setIssueBody] = useState('');
   const [issueDetail, setIssueDetail] = useState<Issue | null>(null);
+  const [prDetail, setPrDetail] = useState<PullRequest | null>(null);
   const [prDiff, setPrDiff] = useState('');
   const [fileText, setFileText] = useState('');
   const loadTimer = useRef<number | null>(null);
@@ -70,9 +71,13 @@ export function useDashboardData(issueFilter: IssueFilter) {
     [visibleIssues],
   );
 
-  const selectedIssue = selection.kind === 'issue' ? issueDetail || issues.find((it) => it.number === selection.id) || null : null;
+  const selectedIssue = selection.kind === 'issue'
+    ? (issueDetail?.number === selection.id ? issueDetail : issues.find((it) => it.number === selection.id) || null)
+    : null;
   const selectedMilestone = selection.kind === 'milestone' ? milestones.find((it) => it.number === selection.id) || null : null;
-  const selectedPr = selection.kind === 'pr' ? prs.find((it) => it.number === selection.id) || null : null;
+  const selectedPr = selection.kind === 'pr'
+    ? (prDetail?.number === selection.id ? prDetail : prs.find((it) => it.number === selection.id) || null)
+    : null;
   const selectedPty = selection.kind === 'pty'
     ? ptys.find((it) => it.sid === selection.id) || {
         sid: selection.id,
@@ -158,20 +163,58 @@ export function useDashboardData(issueFilter: IssueFilter) {
       const issue = issues.find((it) => it.number === selection.id) || null;
       setIssueDetail(issue);
       setIssueBody(issue?.body || '');
+      let cancelled = false;
+      void fetchIssue(selection.id)
+        .then((detail) => {
+          if (cancelled) return;
+          setIssueDetail({ ...(issue || detail), ...detail });
+          setIssueBody(detail.body || '');
+        })
+        .catch((err) => setIssueBody(err instanceof Error ? err.message : String(err)));
+      return () => {
+        cancelled = true;
+      };
     }
+    setIssueDetail(null);
+  }, [selection, issues]);
+
+  useEffect(() => {
     if (selection.kind === 'pr') {
       const pr = prs.find((it) => it.number === selection.id);
+      setPrDetail(pr || null);
       if (pr) {
-        void fetchPrDiff(pr.number).then((data) => setPrDiff(data.diff)).catch((err) => setPrDiff(err instanceof Error ? err.message : String(err)));
+        let cancelled = false;
+        void fetchPr(pr.number)
+          .then((detail) => {
+            if (!cancelled) setPrDetail({ ...pr, ...detail });
+          })
+          .catch(() => {
+            /* keep the snapshot PR if detail fetch fails */
+          });
+        void fetchPrDiff(pr.number)
+          .then((data) => {
+            if (!cancelled) setPrDiff(data.diff);
+          })
+          .catch((err) => {
+            if (!cancelled) setPrDiff(err instanceof Error ? err.message : String(err));
+          });
+        return () => {
+          cancelled = true;
+        };
       }
     }
+    setPrDetail(null);
+    setPrDiff('');
+  }, [selection, prs]);
+
+  useEffect(() => {
     if (selection.kind === 'file') {
       const file = files.find((it) => it.name === selection.id);
       if (file) {
         void fetchFile(file.name).then(setFileText).catch((err) => setFileText(err instanceof Error ? err.message : String(err)));
       }
     }
-  }, [selection, issues, prs, files]);
+  }, [selection, files]);
 
   const counts = useMemo(() => ({
     issues: issues.length,

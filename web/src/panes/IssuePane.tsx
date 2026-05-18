@@ -1,4 +1,4 @@
-import type { Issue } from '../types';
+import type { GitHubComment, Issue } from '../types';
 import { renderMarkdown } from '../markdown';
 import { Button } from '@/components/ui/button';
 import { PaneHeader, PaneShell } from './_shared';
@@ -13,12 +13,33 @@ interface IssuePaneProps {
   onDelete: () => void;
 }
 
+function CommentBlock({ comment }: { comment: GitHubComment }) {
+  return (
+    <article className="min-w-0 rounded-2xl border border-border/70 bg-background/60 p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="font-medium text-foreground">{comment.author || 'unknown'}</span>
+        <span>{comment.created_at ? new Date(comment.created_at).toLocaleString() : ''}</span>
+      </div>
+      <div
+        className="markdown break-words text-sm leading-relaxed text-foreground"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(comment.body || '') }}
+      />
+    </article>
+  );
+}
+
 export function IssuePane({ issue, body, onBodyChange: _onBodyChange, onClaim, onReview, onSave, onDelete }: IssuePaneProps) {
+  const comments = issue.comments || [];
   return (
     <PaneShell className="min-w-0">
       <PaneHeader
         eyebrow={`Issue #${issue.number}`}
         title={issue.title}
+        meta={[
+          issue.author ? `opened by ${issue.author}` : '',
+          issue.state || '',
+          `${comments.length || issue.comment_count || 0} comments`,
+        ].filter(Boolean).join(' · ')}
         chips={[
           ...issue.labels,
           issue.milestone?.title ? `milestone: ${issue.milestone.title}` : '',
@@ -49,11 +70,23 @@ export function IssuePane({ issue, body, onBodyChange: _onBodyChange, onClaim, o
         }
       />
       <div className="min-w-0 rounded-2xl border border-border/70 bg-background/60 p-5">
-        <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Rendered</div>
+        <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Body</div>
         <div
           className="markdown break-words text-sm leading-relaxed text-foreground"
           dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
         />
+      </div>
+      <div className="min-w-0 space-y-2.5">
+        <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          Comments
+        </div>
+        {comments.length ? comments.map((comment, index) => (
+          <CommentBlock key={comment.id || index} comment={comment} />
+        )) : (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-background/40 p-4 text-sm text-muted-foreground">
+            No comments yet.
+          </div>
+        )}
       </div>
     </PaneShell>
   );

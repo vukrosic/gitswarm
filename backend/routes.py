@@ -14,6 +14,8 @@ def dispatch_get(handler, u, qs, send_json_fn):
 
     if path == "/api/issue":
         return _handle_issue_meta(handler, qs, send_json_fn)
+    if path == "/api/pr":
+        return _handle_pr_meta(handler, qs, send_json_fn)
     if path == "/api/pr/diff":
         return _handle_pr_diff(handler, qs, send_json_fn)
     if path == "/api/agents":
@@ -57,6 +59,20 @@ def _handle_issue_meta(handler, qs, send_json_fn):
         return send_json_fn(handler, {"error": "bad num"}, 400)
     try:
         return send_json_fn(handler, fetch_issue_meta(num))
+    except Exception as e:
+        return send_json_fn(handler, {"error": gh_error(e)}, 500)
+
+
+def _handle_pr_meta(handler, qs, send_json_fn):
+    from github import fetch_pr_meta, gh_error
+    try:
+        num = int(_query_value(qs, "num"))
+    except ValueError:
+        return send_json_fn(handler, {"error": "bad num"}, 400)
+    if not (1 <= num <= 9999):
+        return send_json_fn(handler, {"error": "bad num"}, 400)
+    try:
+        return send_json_fn(handler, fetch_pr_meta(num))
     except Exception as e:
         return send_json_fn(handler, {"error": gh_error(e)}, 500)
 
@@ -168,6 +184,8 @@ def dispatch_post(handler, u, payload, send_json_fn):
         return _handle_pty_close(handler, payload, send_json_fn)
     if path == "/api/pty/delete":
         return _handle_pty_delete(handler, payload, send_json_fn)
+    if path == "/api/pty/rename":
+        return _handle_pty_rename(handler, payload, send_json_fn)
     if path == "/api/worktree/remove":
         return _handle_worktree_remove(handler, payload, send_json_fn)
     if path == "/api/state/cleanup":
@@ -246,6 +264,16 @@ def _handle_pty_delete(handler, payload, send_json_fn):
     from github import delete_pty
     sid = payload.get("sid", "")
     ok = delete_pty(sid)
+    return send_json_fn(handler, {"ok": ok})
+
+
+def _handle_pty_rename(handler, payload, send_json_fn):
+    from github import pty_rename
+    sid = payload.get("sid", "")
+    label = payload.get("label", "")
+    if not sid:
+        return send_json_fn(handler, {"error": "sid is required"}, 400)
+    ok = pty_rename(sid, label)
     return send_json_fn(handler, {"ok": ok})
 
 

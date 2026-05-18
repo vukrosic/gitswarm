@@ -66,6 +66,7 @@ from backend.pty_runtime import (
     pty_read,
     kill_pty,
     delete_pty,
+    pty_rename,
     list_ptys,
     live_issue_pty,
     reap_dead_ptys,

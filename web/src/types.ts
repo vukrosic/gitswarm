@@ -20,6 +20,30 @@ export interface Milestone extends MilestoneRef {
   url?: string;
 }
 
+export interface GitHubComment {
+  id?: number;
+  author: string;
+  body: string;
+  url?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface GitHubReview {
+  id?: number;
+  author: string;
+  state: string;
+  body: string;
+  url?: string;
+  submitted_at: string;
+}
+
+export interface GitHubReviewComment extends GitHubComment {
+  path?: string;
+  line?: number | null;
+  diff_hunk?: string;
+}
+
 export interface Issue extends LabelledItem {
   number: number;
   title: string;
@@ -36,6 +60,7 @@ export interface Issue extends LabelledItem {
   url?: string;
   author?: string;
   comment_count?: number;
+  comments?: GitHubComment[];
   milestone?: MilestoneRef | null;
 }
 
@@ -58,6 +83,9 @@ export interface PullRequest extends LabelledItem {
   pending_checks?: string[];
   summary?: string;
   reviewed_by_codex?: boolean;
+  comments?: GitHubComment[];
+  reviews?: GitHubReview[];
+  review_comments?: GitHubReviewComment[];
 }
 
 export interface Worktree {

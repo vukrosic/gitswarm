@@ -78,6 +78,10 @@ export function fetchIssue(number: number) {
   return requestJson<Issue>(`/api/issue?num=${number}`);
 }
 
+export function fetchPr(number: number) {
+  return requestJson<PullRequest>(`/api/pr?num=${number}`);
+}
+
 export function fetchPrDiff(number: number) {
   return requestJson<{ number: number; diff: string }>(`/api/pr/diff?num=${number}`);
 }
@@ -132,6 +136,10 @@ export function ptyInput(sid: string, data: string) {
 
 export function ptyResize(sid: string, rows: number, cols: number) {
   return requestJson('/api/pty/resize', { method: 'POST', json: { sid, rows, cols } });
+}
+
+export function ptyRename(sid: string, label: string) {
+  return requestJson('/api/pty/rename', { method: 'POST', json: { sid, label } });
 }
 
 export function removeWorktree(name: string) {

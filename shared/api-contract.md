@@ -78,6 +78,23 @@ Error: `{"error": "bad num"}` (400)
 
 ---
 
+## GET /api/pr?num=N
+
+```json
+{
+  "number": 42,
+  "title": "string",
+  "body": "string",
+  "comments": [{ "author": "vukrosic", "body": "markdown", "created_at": "2024-05-18T12:00:00Z" }],
+  "reviews": [{ "author": "reviewer", "state": "APPROVED", "body": "markdown", "submitted_at": "2024-05-18T12:00:00Z" }],
+  "review_comments": [{ "author": "reviewer", "path": "file.ts", "line": 12, "body": "markdown" }]
+}
+```
+
+Error: `{"error": "bad num"}` (400)
+
+---
+
 ## GET /api/agents
 
 ```json

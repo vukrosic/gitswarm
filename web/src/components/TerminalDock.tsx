@@ -1,8 +1,8 @@
 import type { ClipboardEvent, KeyboardEvent, UIEvent } from 'react';
 import type { PtySession } from '../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Terminal as TerminalIcon, X } from 'lucide-react';
-import { ptyResize } from '../api';
+import { ChevronDown, ChevronUp, Plus, Terminal as TerminalIcon, X, Pencil } from 'lucide-react';
+import { ptyResize, ptyRename } from '../api';
 import { ago } from '../lib/time';
 import { sessionLabel } from '../lib/labels';
 import { renderTerminalText } from '../lib/terminal';
@@ -79,6 +79,8 @@ export function TerminalDock({
     rows: pty?.rows || 30,
     cols: pty?.cols || 120,
   });
+  const [renamingSid, setRenamingSid] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const displayLog = useMemo(
     () => renderTerminalText(log, terminalSize),
     [log, terminalSize.rows, terminalSize.cols],
@@ -176,6 +178,33 @@ export function TerminalDock({
     stickToBottomRef.current = distanceFromBottom < 24;
   }
 
+  function startRename(session: PtySession) {
+    setRenamingSid(session.sid);
+    setRenameValue(session.label || session.sid);
+  }
+
+  function handleRenameKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter') {
+      const sid = renamingSid;
+      if (sid) {
+        void ptyRename(sid, renameValue).then(() => {
+          setRenamingSid(null);
+        });
+      }
+    } else if (event.key === 'Escape') {
+      setRenamingSid(null);
+    }
+  }
+
+  function handleRenameBlur() {
+    const sid = renamingSid;
+    if (sid) {
+      void ptyRename(sid, renameValue).then(() => {
+        setRenamingSid(null);
+      });
+    }
+  }
+
   return (
     <section
       aria-label="Manual terminal dock"
@@ -220,6 +249,7 @@ export function TerminalDock({
           >
             {sessions.map((session) => {
               const on = pty?.sid === session.sid;
+              const isRenaming = renamingSid === session.sid;
               return (
                 <button
                   key={session.sid}
@@ -234,7 +264,28 @@ export function TerminalDock({
                   )}
                 >
                   <TerminalIcon className="h-3 w-3" />
-                  {sessionLabel(session)}
+                  {isRenaming ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={handleRenameKeyDown}
+                      onBlur={handleRenameBlur}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-20 bg-transparent text-[11px] outline-none"
+                    />
+                  ) : (
+                    <span className="max-w-[120px] truncate">{sessionLabel(session)}</span>
+                  )}
+                  {!isRenaming && (
+                    <Pencil
+                      className="h-3 w-3 cursor-pointer opacity-50 hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startRename(session);
+                      }}
+                    />
+                  )}
                 </button>
               );
             })}

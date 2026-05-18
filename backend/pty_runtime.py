@@ -223,6 +223,14 @@ def pty_resize(sid, rows, cols):
     return True
 
 
+def pty_rename(sid, label):
+    sess = _PTY_SESSIONS.get(sid)
+    if not sess:
+        return False
+    sess["label"] = label
+    return True
+
+
 def pty_read(sid, offset, timeout=20):
     sess = _PTY_SESSIONS.get(sid)
     if not sess:

@@ -64,6 +64,7 @@ export default function App() {
     agents,
     defaultAgent,
     visibleIssues,
+    visibleClaimCount,
     selectedIssue,
     selectedMilestone,
     selectedPr,
