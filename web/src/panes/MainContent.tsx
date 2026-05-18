@@ -113,9 +113,17 @@ export function MainContent(props: MainContentProps) {
   } = props;
 
   return (
-    <main className="main">
-      {loading && !snapshot ? <div className="empty">Loading dashboard...</div> : null}
-      {error ? <div className="error">{error}</div> : null}
+    <main className="scrollbar-thin min-h-0 overflow-auto">
+      {loading && !snapshot ? (
+        <div className="rounded-[var(--radius)] border border-border bg-card/60 px-5 py-4 text-sm text-muted-foreground">
+          Loading dashboard...
+        </div>
+      ) : null}
+      {error ? (
+        <div className="rounded-[var(--radius)] border border-destructive/40 bg-destructive/10 px-5 py-4 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
       {pane === 'issues' && selectedIssue ? (
         <IssuePane
           issue={selectedIssue}

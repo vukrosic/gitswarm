@@ -402,7 +402,7 @@ export default function App() {
   })();
 
   return (
-    <div className="app-shell">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <AppHeader
         agents={agents}
         defaultAgent={defaultAgent}
@@ -414,7 +414,7 @@ export default function App() {
         onRefresh={() => void load()}
       />
 
-      <div className="workspace">
+      <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[340px_minmax(340px,0.95fr)_minmax(420px,1.25fr)] max-lg:grid-cols-[280px_minmax(0,1fr)] max-lg:grid-rows-[1fr_minmax(380px,54vh)] max-md:grid-cols-1 max-md:grid-rows-[auto_auto_minmax(300px,50vh)]">
         <DashboardSidebar
           pane={pane}
           counts={counts}
@@ -495,7 +495,7 @@ export default function App() {
           onPruneMerged={() => void handlePruneMergedWorktrees()}
         />
 
-        <div className={`right-rail ${dockCollapsed ? 'dock-is-collapsed' : ''}`}>
+        <div className={`grid min-h-0 gap-3 overflow-hidden ${dockCollapsed ? 'grid-rows-[auto]' : 'grid-rows-[minmax(0,1fr)]'} max-lg:col-span-full max-lg:grid-cols-[minmax(360px,1.2fr)_minmax(260px,0.8fr)] max-md:grid-cols-1`}>
           <TerminalDock
             pty={dockPty}
             sessions={manualPtys}

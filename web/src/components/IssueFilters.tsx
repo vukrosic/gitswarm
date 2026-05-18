@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import type { IssueFilter } from '../types/dashboard';
 
 export const ISSUE_FILTERS: Array<{ key: IssueFilter; label: string }> = [
@@ -16,16 +17,25 @@ interface IssueFiltersProps {
 
 export function IssueFilters({ value, onChange }: IssueFiltersProps) {
   return (
-    <div className="filter-row">
-      {ISSUE_FILTERS.map((filter) => (
-        <button
-          key={filter.key}
-          className={value === filter.key ? 'on' : ''}
-          onClick={() => onChange(filter.key)}
-        >
-          {filter.label}
-        </button>
-      ))}
+    <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+      {ISSUE_FILTERS.map((filter) => {
+        const active = value === filter.key;
+        return (
+          <button
+            key={filter.key}
+            type="button"
+            onClick={() => onChange(filter.key)}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+              active
+                ? 'border-primary/60 bg-gradient-to-b from-primary/15 to-primary/5 text-foreground'
+                : 'border-border bg-card/40 text-muted-foreground hover:border-primary/40 hover:text-foreground',
+            )}
+          >
+            {filter.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

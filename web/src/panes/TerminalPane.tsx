@@ -2,6 +2,9 @@ import type { PtySession } from '../types';
 import { useMemo } from 'react';
 import { ago } from '../lib/time';
 import { renderTerminalText } from '../lib/terminal';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { PaneHeader, PaneShell } from './_shared';
 
 interface TerminalPaneProps {
   pty: PtySession;
@@ -34,23 +37,32 @@ export function TerminalPane({
   );
 
   return (
-    <section className="detail terminal">
-      <div className="detail-head">
-        <div>
-          <div className="eyebrow">PTY {pty.sid}</div>
-          <h2>{pty.label}</h2>
-          <div className="meta-line">{pty.cwd} · {pty.alive ? 'alive' : 'dead'} · {ago(pty.last_output)}</div>
-        </div>
-        <div className="detail-actions">
-          <button onClick={onSend}>Send</button>
-          <button onClick={onCtrlC}>Ctrl-C</button>
-          <button onClick={onClose}>Close</button>
-          <button className="danger" onClick={onDelete}>Delete</button>
-        </div>
+    <PaneShell>
+      <PaneHeader
+        eyebrow={`PTY ${pty.sid}`}
+        title={pty.label}
+        meta={`${pty.cwd} · ${pty.alive ? 'alive' : 'dead'} · ${ago(pty.last_output)}`}
+        actions={
+          <>
+            <Button variant="primary" size="sm" onClick={onSend}>Send</Button>
+            <Button variant="outline" size="sm" onClick={onCtrlC}>Ctrl-C</Button>
+            <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+            <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
+          </>
+        }
+      />
+      <Textarea
+        value={input}
+        onChange={(event) => onInputChange(event.target.value)}
+        placeholder="Type shell input and hit Send"
+        className="min-h-[96px] resize-y font-mono"
+      />
+      <pre className="scrollbar-thin m-0 min-h-0 flex-1 overflow-auto whitespace-pre rounded-2xl border border-border bg-background/80 p-4 font-mono text-[12px] leading-snug text-foreground [tab-size:8] shadow-[inset_0_1px_0_hsl(0_0%_100%/0.03)]">
+        {displayLog || 'Waiting for output...'}
+      </pre>
+      <div className="text-[11px] text-muted-foreground">
+        offset {offset} · {alive ? 'streaming' : 'stopped'}
       </div>
-      <textarea className="pty-input" value={input} onChange={(e) => onInputChange(e.target.value)} placeholder="Type shell input and hit Send" />
-      <pre className="terminal-view">{displayLog || 'Waiting for output...'}</pre>
-      <div className="meta-line">offset {offset} · {alive ? 'streaming' : 'stopped'}</div>
-    </section>
+    </PaneShell>
   );
 }

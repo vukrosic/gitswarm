@@ -1,5 +1,7 @@
 import type { Issue } from '../types';
 import { renderMarkdown } from '../markdown';
+import { Button } from '@/components/ui/button';
+import { PaneHeader, PaneShell } from './_shared';
 
 interface IssuePaneProps {
   issue: Issue;
@@ -11,28 +13,29 @@ interface IssuePaneProps {
   onDelete: () => void;
 }
 
-export function IssuePane({ issue, body, onBodyChange, onClaim, onReview, onSave, onDelete }: IssuePaneProps) {
+export function IssuePane({ issue, body, onBodyChange: _onBodyChange, onClaim, onReview, onSave, onDelete }: IssuePaneProps) {
   return (
-    <section className="detail">
-      <div className="detail-head">
-        <div>
-          <div className="eyebrow">Issue #{issue.number}</div>
-          <h2>{issue.title}</h2>
-          <div className="chips">
-            {issue.labels.map((label) => <span key={label} className={`chip ${label}`}>{label}</span>)}
-          </div>
-        </div>
-        <div className="detail-actions">
-          <button onClick={onClaim}>Claim</button>
-          <button onClick={onReview}>Review</button>
-          <button onClick={onSave}>Save body</button>
-          <button className="danger" onClick={onDelete}>Delete</button>
-        </div>
+    <PaneShell>
+      <PaneHeader
+        eyebrow={`Issue #${issue.number}`}
+        title={issue.title}
+        chips={issue.labels}
+        actions={
+          <>
+            <Button variant="primary" size="sm" onClick={onClaim}>Claim</Button>
+            <Button variant="outline" size="sm" onClick={onReview}>Review</Button>
+            <Button variant="outline" size="sm" onClick={onSave}>Save body</Button>
+            <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
+          </>
+        }
+      />
+      <div className="rounded-2xl border border-border/70 bg-background/60 p-5">
+        <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Rendered</div>
+        <div
+          className="markdown text-sm leading-relaxed text-foreground"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+        />
       </div>
-      <div className="rendered markdown">
-        <div className="eyebrow">Rendered</div>
-        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }} />
-      </div>
-    </section>
+    </PaneShell>
   );
 }

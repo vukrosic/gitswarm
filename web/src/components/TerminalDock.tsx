@@ -1,10 +1,13 @@
 import type { ClipboardEvent, KeyboardEvent, UIEvent } from 'react';
 import type { PtySession } from '../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Plus, Terminal as TerminalIcon, X } from 'lucide-react';
 import { ptyResize } from '../api';
 import { ago } from '../lib/time';
 import { sessionLabel } from '../lib/labels';
 import { renderTerminalText } from '../lib/terminal';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface TerminalDockProps {
   pty: PtySession | null;
@@ -62,7 +65,7 @@ export function TerminalDock({
   alive,
   collapsed,
   onClose,
-  onDelete,
+  onDelete: _onDelete,
   onToggle,
   onNewAgent,
   onFocusSession,
@@ -82,16 +85,12 @@ export function TerminalDock({
   );
 
   useEffect(() => {
-    if (pty && !collapsed) {
-      terminalRef.current?.focus();
-    }
+    if (pty && !collapsed) terminalRef.current?.focus();
   }, [pty?.sid, collapsed]);
 
   useEffect(() => {
     stickToBottomRef.current = true;
-    if (!collapsed) {
-      outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
-    }
+    if (!collapsed) outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
   }, [pty?.sid, collapsed]);
 
   useEffect(() => {
@@ -137,31 +136,26 @@ export function TerminalDock({
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (!pty) return;
-
     if (event.ctrlKey && event.key.toLowerCase() === 'c') {
       event.preventDefault();
-      onType('\u0003');
+      onType('');
       return;
     }
-
     if (event.key === 'Enter') {
       event.preventDefault();
       onType('\n');
       return;
     }
-
     if (event.key === 'Backspace') {
       event.preventDefault();
-      onType('\u007f');
+      onType('');
       return;
     }
-
     if (event.key === 'Tab') {
       event.preventDefault();
       onType('\t');
       return;
     }
-
     if (event.key.length === 1 && !event.metaKey && !event.altKey && !event.ctrlKey) {
       event.preventDefault();
       onType(event.key);
@@ -183,67 +177,104 @@ export function TerminalDock({
   }
 
   return (
-    <section className={`terminal-dock ${collapsed ? 'collapsed' : ''}`} aria-label="Manual terminal dock">
-      <div className="dock-head">
-        <div>
-          <div className="eyebrow">Dock</div>
-          <h3>{pty ? sessionLabel(pty) : 'manual shells & agents'}</h3>
-          <div className="meta-line">
-            {pty ? `${pty.cwd || 'repo'} · ${pty.alive ? 'alive' : 'dead'} · ${ago(pty.last_output)}` : 'Use + new shell or + new agent for manual typing.'}
+    <section
+      aria-label="Manual terminal dock"
+      className={cn(
+        'flex min-h-0 flex-col overflow-hidden rounded-[var(--radius)] border border-border bg-gradient-to-b from-card/90 to-background/95 shadow-[0_24px_70px_hsl(0_0%_0%/0.42)] backdrop-blur-xl',
+        collapsed && 'min-h-[88px]',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-border/60 bg-background/40 p-3.5">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Dock</div>
+          <h3 className="mt-0.5 truncate text-sm font-semibold tracking-tight text-foreground">
+            {pty ? sessionLabel(pty) : 'manual shells & agents'}
+          </h3>
+          <div className="mt-1 truncate text-[11px] text-muted-foreground">
+            {pty
+              ? `${pty.cwd || 'repo'} · ${pty.alive ? 'alive' : 'dead'} · ${ago(pty.last_output)}`
+              : 'Use + new shell or + new agent for manual typing.'}
           </div>
         </div>
-        <div className="dock-actions">
-          <button type="button" onClick={onNewAgent}>+ agent</button>
-          <button type="button" onClick={onClose} disabled={!pty}>Close</button>
-          <button type="button" onClick={onToggle}>{collapsed ? 'Open' : 'Collapse'}</button>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <Button variant="outline" size="sm" onClick={onNewAgent}>
+            <Plus className="h-3 w-3" />
+            agent
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={!pty}>
+            <X className="h-3 w-3" />
+            Close
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onToggle}>
+            {collapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+            {collapsed ? 'Open' : 'Collapse'}
+          </Button>
         </div>
       </div>
 
       {!collapsed ? (
         <>
-          <div className="terminal-tabs" aria-label="Manual terminal sessions">
-            {sessions.map((session) => (
-              <button
-                key={session.sid}
-                type="button"
-                className={pty?.sid === session.sid ? 'on' : ''}
-                onClick={() => onFocusSession(session)}
-                title={session.cwd}
-              >
-                {sessionLabel(session)}
-              </button>
-            ))}
-            {!sessions.length ? <span>No manual sessions yet</span> : null}
+          <div
+            className="scrollbar-thin flex gap-1.5 overflow-x-auto border-b border-border/60 bg-background/30 px-3 py-2"
+            aria-label="Manual terminal sessions"
+          >
+            {sessions.map((session) => {
+              const on = pty?.sid === session.sid;
+              return (
+                <button
+                  key={session.sid}
+                  type="button"
+                  onClick={() => onFocusSession(session)}
+                  title={session.cwd}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                    on
+                      ? 'border-success/60 bg-gradient-to-b from-success/20 to-success/5 text-foreground'
+                      : 'border-border bg-card/40 text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                  )}
+                >
+                  <TerminalIcon className="h-3 w-3" />
+                  {sessionLabel(session)}
+                </button>
+              );
+            })}
+            {!sessions.length ? (
+              <span className="self-center text-[11px] text-muted-foreground">No manual sessions yet</span>
+            ) : null}
           </div>
 
-          <div className="dock-body">
+          <div className="flex min-h-0 flex-1 flex-col gap-2.5 bg-background/40 p-3">
             {pty ? (
               <div
                 ref={terminalRef}
-                className="dock-terminal-surface"
                 tabIndex={0}
                 role="textbox"
                 aria-multiline="true"
                 aria-label="Manual terminal input"
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
+                className="flex min-h-0 flex-1 cursor-text flex-col gap-2 overflow-hidden rounded-2xl border border-border bg-background/80 p-3 outline-none transition-colors focus-visible:border-primary/70 focus-visible:shadow-[0_0_0_2px_hsl(var(--primary)/0.16)]"
               >
                 <pre
                   ref={outputRef}
-                  className="terminal-view dock-terminal-view"
                   onScroll={handleOutputScroll}
+                  className="scrollbar-thin m-0 min-h-0 flex-1 overflow-auto whitespace-pre font-mono text-[12px] leading-snug text-foreground [tab-size:8] [overscroll-behavior:contain]"
                 >
                   {displayLog || 'Waiting for output...'}
                 </pre>
-                <div className="dock-terminal-hint">Click here and type. Enter sends, Backspace deletes, Ctrl-C interrupts.</div>
-                <div className="meta-line">offset {offset} · {alive ? 'streaming' : 'stopped'}</div>
+                <div className="text-[11px] text-muted-foreground">
+                  Click here and type. Enter sends, Backspace deletes, Ctrl-C interrupts.
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  offset {offset} · {alive ? 'streaming' : 'stopped'}
+                </div>
               </div>
             ) : (
-              <div className="dock-empty">
-                <strong>Manual terminal dock</strong>
-                <span>Header + new shell opens a repo shell here.</span>
-                <span>Dock + agent opens the selected agent here.</span>
-                <span>Claim, review, merge, fix CI, and propose stay in the middle pane.</span>
+              <div className="flex min-h-[240px] flex-1 flex-col items-start justify-center gap-1.5 rounded-2xl border border-dashed border-primary/30 bg-background/60 p-5">
+                <strong className="text-sm text-foreground">Manual terminal dock</strong>
+                <span className="text-xs text-muted-foreground">Header + new shell opens a repo shell here.</span>
+                <span className="text-xs text-muted-foreground">Dock + agent opens the selected agent here.</span>
+                <span className="text-xs text-muted-foreground">Claim, review, merge, fix CI, and propose stay in the middle pane.</span>
               </div>
             )}
           </div>
