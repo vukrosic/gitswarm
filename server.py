@@ -62,6 +62,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send_json(fetch_issue_meta(num))
             except Exception as e:
                 return self._send_json({"error": gh_error(e)}, 500)
+        if u.path == "/api/pr/diff":
+            qs = dict(p.split("=", 1) for p in (u.query.split("&") if u.query else []) if "=" in p)
+            try:
+                num = int(unquote(qs.get("num", "")))
+            except ValueError:
+                return self._send_json({"error": "bad num"}, 400)
+            if not (1 <= num <= 9999):
+                return self._send_json({"error": "bad num"}, 400)
+            try:
+                return self._send_json({"number": num, "diff": fetch_pr_diff(num)})
+            except Exception as e:
+                return self._send_json({"error": gh_error(e)}, 500)
 
         if u.path == "/api/agents":
             # List configured agents + which binaries are actually installed.
@@ -196,6 +208,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 return self._send_json({"error": "issue must be int"}, 400)
             result = close_issue(issue)
+            status = 200 if not result.get("error") else 400
+            return self._send_json(result, status)
+
+        if u.path == "/api/issue/create":
+            title = payload.get("title", "")
+            body_text = payload.get("body", "")
+            result = create_issue(title, body=body_text)
             status = 200 if not result.get("error") else 400
             return self._send_json(result, status)
 
@@ -809,6 +828,84 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "agent": agent["id"],
                     "model": agent.get("model"),
                     "reused": False,
+                })
+            if kind == "issue-review":
+                try:
+                    issue = int(payload.get("issue"))
+                except (TypeError, ValueError):
+                    return self._send_json({"error": "issue must be int"}, 400)
+                prep = prepare_issue_review(issue)
+                if prep.get("error"):
+                    return self._send_json(prep, 400)
+                prompt_file = prep["prompt_file"]
+                review_out = STATE_DIR / f"issue-review-{issue}.md"
+                review_url_file = STATE_DIR / f"issue-review-{issue}.url"
+                review_url_file.unlink(missing_ok=True)
+
+                agent = resolve_agent(
+                    payload.get("agent"),
+                    override_model=payload.get("model"),
+                    override_bin=payload.get("bin"),
+                    override_yolo=payload.get("yolo_flag"),
+                )
+                agent_cmd = build_agent_cmd(agent, f"$(cat {shlex.quote(prompt_file)})")
+
+                env_extra = {
+                    "ISSUE_NUMBER": str(issue),
+                    "REVIEW_OUT": str(review_out),
+                    "REVIEW_URL_FILE": str(review_url_file),
+                    "PROMPT_FILE": prompt_file,
+                    "PS1": "\\[\\e[35m\\]review·issue#" + str(issue) + "\\[\\e[0m\\]:\\W$ ",
+                }
+                wrapper = (
+                    'touch $REVIEW_OUT; '
+                    'echo "──── starting {bin} ({yolo_short}) review of issue #{issue} ────"; '
+                    'echo "      agent:  {agent_label}"; '
+                    'echo "      model:  {model}"; '
+                    'echo "      prompt: $PROMPT_FILE"; '
+                    'echo "      out:    $REVIEW_OUT  (agent writes verdict here)"; '
+                    'echo "────"; '
+                    '{agent_cmd}; '
+                    'ec=$?; '
+                    'echo; '
+                    'echo "──── {bin} exited (code $ec) ────"; '
+                    'if [ -s "$REVIEW_OUT" ]; then '
+                        'echo "  $REVIEW_OUT has $(wc -l < $REVIEW_OUT) lines — posting to issue #{issue}…"; '
+                        'url=$(gh issue comment {issue} -F $REVIEW_OUT 2>&1); '
+                        'echo "  $url"; '
+                        'echo "$url" | grep -Eo \'https://github.com/[^ ]+\' | head -1 > $REVIEW_URL_FILE; '
+                        'echo "  comment url saved to $REVIEW_URL_FILE"; '
+                    'else '
+                        'echo "  $REVIEW_OUT is empty — agent did not produce a verdict file."; '
+                        'echo "  to post manually: gh issue comment {issue} -F $REVIEW_OUT (after writing it)"; '
+                    'fi; '
+                    'echo; '
+                    'exec {shell} -i'
+                ).format(
+                    issue=issue,
+                    agent_label=agent["label"],
+                    model=agent.get("model") or "(agent default)",
+                    bin=shlex.quote(agent["bin"]),
+                    yolo_short=agent_short(agent),
+                    agent_cmd=agent_cmd,
+                    shell=shlex.quote(USER_SHELL),
+                )
+                argv = ["bash", "-c", wrapper]
+                sess = spawn_pty(argv, cwd=str(REPO_ROOT),
+                                 env_extra=env_extra,
+                                 label=f"{agent['id']} review · issue #{issue}",
+                                 rows=rows, cols=cols)
+                return self._send_json({
+                    "sid": sess["sid"],
+                    "label": sess["label"],
+                    "cwd": sess["cwd"],
+                    "issue": issue,
+                    "issue_url": prep.get("url"),
+                    "agent": agent["id"],
+                    "model": agent.get("model"),
+                    "prompt_file": prompt_file,
+                    "review_out": str(review_out),
+                    "review_url_file": str(review_url_file),
                 })
             return self._send_json({"error": f"unknown kind: {kind}"}, 400)
 
