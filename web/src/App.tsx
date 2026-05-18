@@ -1,0 +1,517 @@
+import { useEffect, useRef, useState } from 'react';
+import {
+  createIssue,
+  deleteIssue,
+  deletePty,
+  closePty,
+  launchShell,
+  ptyInput,
+  removeWorktree,
+  sendIssueLaunch,
+  sendPromptLaunch,
+  sendShellLaunch,
+  updateIssue,
+  issueCleanup,
+} from './api';
+import type { Issue, PullRequest, PtySession, Worktree } from './types';
+import type { IssueFilter, LaunchResult, Pane, Selection } from './types/dashboard';
+import { AppHeader } from './components/AppHeader';
+import { DashboardSidebar } from './components/DashboardSidebar';
+import { TerminalDock } from './components/TerminalDock';
+import { MainContent } from './panes/MainContent';
+import { useDashboardData } from './hooks/useDashboardData';
+import { usePtyStream } from './hooks/usePtyStream';
+
+export default function App() {
+  const [pane, setPane] = useState<Pane>('issues');
+  const [issueFilter, setIssueFilter] = useState<IssueFilter>('all');
+  const dashboard = useDashboardData(issueFilter);
+  const [launchText, setLaunchText] = useState('summarize the first 5 open issues');
+  const [ptyText, setPtyText] = useState('');
+  const [busy, setBusy] = useState<string>('');
+  const [selectedAgent, setSelectedAgent] = useState(() => localStorage.getItem('gitswarm.agent') || 'codex');
+  const [issueTitle, setIssueTitle] = useState('');
+  const [issueDraftBody, setIssueDraftBody] = useState('');
+  const [dockPtyId, setDockPtyId] = useState('');
+  const [dockCollapsed, setDockCollapsed] = useState(() => localStorage.getItem('gitswarm.terminalDockCollapsed') === '1');
+  const codeMtimeRef = useRef(0);
+  const {
+    snapshot,
+    loading,
+    error,
+    setError,
+    load,
+    selection,
+    setSelection,
+    issueBody,
+    setIssueBody,
+    prDiff,
+    fileText,
+    issues,
+    prs,
+    worktrees,
+    files,
+    ptys,
+    agents,
+    defaultAgent,
+    visibleIssues,
+    visibleClaimCount,
+    selectedIssue,
+    selectedPr,
+    selectedPty,
+    selectedWorktree,
+    selectedFile,
+    counts,
+  } = dashboard;
+  const ptyStream = usePtyStream(selectedPty?.sid || '');
+  const dockPty = dockPtyId
+    ? ptys.find((it) => it.sid === dockPtyId) || {
+        sid: dockPtyId,
+        label: 'starting manual session...',
+        cwd: '',
+        alive: true,
+        kind: 'shell',
+      }
+    : null;
+  const manualPtys = ptys.filter((pty) => pty.kind === 'shell' || pty.kind === 'agent-shell');
+  const dockStream = usePtyStream(dockPty?.sid || '');
+
+  useEffect(() => {
+    localStorage.setItem('gitswarm.agent', selectedAgent);
+  }, [selectedAgent]);
+
+  useEffect(() => {
+    localStorage.setItem('gitswarm.terminalDockCollapsed', dockCollapsed ? '1' : '0');
+  }, [dockCollapsed]);
+
+  useEffect(() => {
+    const codeMtime = snapshot?.codeMtime || 0;
+    if (!codeMtime) return;
+    if (codeMtimeRef.current && codeMtime > codeMtimeRef.current + 0.5) {
+      window.location.reload();
+      return;
+    }
+    codeMtimeRef.current = codeMtime;
+  }, [snapshot?.codeMtime]);
+
+  useEffect(() => {
+    if (!agents.length) return;
+    if (!agents.some((agent) => agent.id === selectedAgent)) {
+      setSelectedAgent(defaultAgent || agents[0].id);
+    }
+  }, [agents, defaultAgent, selectedAgent]);
+
+  async function run<T>(label: string, fn: () => Promise<T>) {
+    setBusy(label);
+    try {
+      const res = await fn();
+      await load();
+      return res;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`${label}: ${message}`);
+      throw err;
+    } finally {
+      setBusy('');
+    }
+  }
+
+  function shouldOpenInDock(pty: Pick<PtySession, 'kind'> | null | undefined) {
+    return pty?.kind === 'shell' || pty?.kind === 'agent-shell';
+  }
+
+  function focusMainPty(sid: string) {
+    setPane('pty');
+    setSelection({ kind: 'pty', id: sid });
+  }
+
+  function focusDockPty(sid: string) {
+    setDockPtyId(sid);
+    setDockCollapsed(false);
+  }
+
+  function focusPty(pty: PtySession) {
+    if (shouldOpenInDock(pty)) {
+      focusDockPty(pty.sid);
+      return;
+    }
+    focusMainPty(pty.sid);
+  }
+
+  function focusLaunchResult(result: LaunchResult | undefined, target: 'main' | 'dock') {
+    if (!result?.sid) return;
+    if (target === 'dock') focusDockPty(result.sid);
+    else focusMainPty(result.sid);
+  }
+
+  async function launchIssueShell(issue: Issue, focus = true) {
+    const result = await run(`claim #${issue.number}`, async () => {
+      return sendIssueLaunch(issue.number, selectedAgent, 'issue-shell') as Promise<LaunchResult>;
+    });
+    if (focus) {
+      focusLaunchResult(result, 'main');
+    }
+    return result;
+  }
+
+  async function handleClaim(issue: Issue) {
+    await launchIssueShell(issue, true);
+  }
+
+  async function launchIssueReview(issue: Issue, focus = true) {
+    const result = await run(`review #${issue.number}`, async () => {
+      return sendPromptLaunch('issue-review', { issue: issue.number, agent: selectedAgent }) as Promise<LaunchResult>;
+    });
+    if (focus) {
+      focusLaunchResult(result, 'main');
+    }
+    return result;
+  }
+
+  async function handleReviewIssue(issue: Issue) {
+    await launchIssueReview(issue, true);
+  }
+
+  async function handleReviewPr(pr: PullRequest) {
+    const result = await run(`review PR #${pr.number}`, async () => {
+      return sendPromptLaunch('pr-review', { pr: pr.number, agent: selectedAgent }) as Promise<LaunchResult>;
+    });
+    focusLaunchResult(result, 'main');
+  }
+
+  async function handleMergePr(pr: PullRequest) {
+    const result = await run(`merge PR #${pr.number}`, async () => {
+      return sendPromptLaunch('merge-pr', { pr: pr.number, agent: selectedAgent }) as Promise<LaunchResult>;
+    });
+    focusLaunchResult(result, 'main');
+  }
+
+  async function handleFixCi(pr: PullRequest) {
+    const result = await run(`fix-ci PR #${pr.number}`, async () => {
+      return sendPromptLaunch('ci-fix', { pr: pr.number, agent: selectedAgent }) as Promise<LaunchResult>;
+    });
+    focusLaunchResult(result, 'main');
+  }
+
+  async function handlePropose() {
+    const result = await run('propose', async () => {
+      return sendPromptLaunch('propose-issue', { agent: selectedAgent, slug: launchText }) as Promise<LaunchResult>;
+    });
+    focusLaunchResult(result, 'main');
+  }
+
+  async function handleNewShell() {
+    const result = await run('shell', async () => {
+      return launchShell() as Promise<LaunchResult>;
+    });
+    focusLaunchResult(result, 'dock');
+  }
+
+  async function handleAgentShell() {
+    const result = await run('agent-shell', async () => {
+      return sendShellLaunch(selectedAgent) as Promise<LaunchResult>;
+    });
+    focusLaunchResult(result, 'dock');
+  }
+
+  async function handleDeleteIssue(issue: Issue) {
+    if (!confirm(`Delete issue #${issue.number}?`)) return;
+    await run(`delete #${issue.number}`, async () => {
+      await deleteIssue(issue.number);
+    });
+  }
+
+  async function handleEditIssue(issue: Issue) {
+    await run(`update #${issue.number}`, async () => {
+      await updateIssue(issue.number, issue.title, issueBody);
+    });
+  }
+
+  async function handleDeletePty(p: PtySession) {
+    if (!confirm(`Delete session ${p.label}?`)) return;
+    await run(`delete pty ${p.sid}`, async () => {
+      await deletePty(p.sid);
+    });
+    if (dockPtyId === p.sid) {
+      setDockPtyId('');
+    }
+    if (selection.kind === 'pty' && selection.id === p.sid) {
+      setSelection({ kind: 'none' });
+    }
+  }
+
+  async function handleClosePty(p: PtySession) {
+    await run(`close pty ${p.sid}`, async () => {
+      await closePty(p.sid);
+    });
+  }
+
+  async function handleSendPty() {
+    if (selection.kind !== 'pty') return;
+    await ptyInput(selection.id, ptyText.endsWith('\n') ? ptyText : `${ptyText}\n`);
+    setPtyText('');
+  }
+
+  async function handlePtyCtrlC() {
+    if (selection.kind !== 'pty') return;
+    await ptyInput(selection.id, '\u0003');
+  }
+
+  async function handleDockType(value: string) {
+    if (!dockPtyId) return;
+    await ptyInput(dockPtyId, value);
+  }
+
+  async function handleDockClose() {
+    if (!dockPty) return;
+    await handleClosePty(dockPty);
+  }
+
+  async function handleDockDelete() {
+    if (!dockPty) return;
+    await handleDeletePty(dockPty);
+  }
+
+  async function handleWorktreeRemove(w: Worktree) {
+    if (!confirm(`Remove worktree ${w.name}?`)) return;
+    await run(`remove ${w.name}`, async () => {
+      await removeWorktree(w.name);
+    });
+  }
+
+  async function handleWorktreeShell(w: Worktree) {
+    const result = await run(`shell ${w.name}`, async () => {
+      return launchShell(`.agent-worktrees/${w.name}`) as Promise<LaunchResult>;
+    });
+    focusLaunchResult(result, 'dock');
+  }
+
+  async function handleCleanup(dryRun: boolean) {
+    const label = dryRun ? 'cleanup audit' : 'cleanup prune';
+    await run(label, async () => {
+      await issueCleanup(7, dryRun);
+    });
+  }
+
+  async function handlePruneMergedWorktrees() {
+    const targets = worktrees.filter((worktree) => worktree.safe_remove);
+    if (!targets.length) return;
+    if (!confirm(`Prune ${targets.length} merged worktree${targets.length === 1 ? '' : 's'}?`)) return;
+    await run('prune merged worktrees', async () => {
+      for (const worktree of targets) {
+        await removeWorktree(worktree.name);
+      }
+    });
+  }
+
+  async function handleCreateIssue() {
+    const title = issueTitle.trim();
+    if (!title) return;
+    const result = await run('create issue', async () => {
+      return createIssue(title, issueDraftBody) as Promise<{ number?: number }>;
+    });
+    if (result && typeof result === 'object' && result.number) {
+      setPane('issues');
+      setIssueTitle('');
+      setIssueDraftBody('');
+      setSelection({ kind: 'issue', id: result.number });
+    }
+  }
+
+  async function handleBatchReviewVisible() {
+    const batch = visibleIssues.slice(0, 10);
+    if (!batch.length) return;
+    if (!confirm(`Launch ${batch.length} visible issue review${batch.length === 1 ? '' : 's'}?`)) return;
+    for (let i = 0; i < batch.length; i += 1) {
+      await launchIssueReview(batch[i], false);
+      if (i < batch.length - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+      }
+    }
+    await load();
+  }
+
+  async function handleBatchClaimNext() {
+    const batch = issues.filter((issue) => issue.claim_next && !issue.in_progress).slice(0, 3);
+    if (!batch.length) return;
+    if (!confirm(`Launch ${batch.length} claim-next issue${batch.length === 1 ? '' : 's'}?`)) return;
+    for (let i = 0; i < batch.length; i += 1) {
+    await launchIssueShell(batch[i], i === batch.length - 1);
+      if (i < batch.length - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+      }
+    }
+  }
+
+  const selectedIssueActions = selectedIssue ? (
+    <>
+      <button onClick={() => void handleClaim(selectedIssue)}>Claim issue</button>
+      <button onClick={() => void handleReviewIssue(selectedIssue)}>Review issue</button>
+      <button onClick={() => void launchIssueShell(selectedIssue)}>Open terminal</button>
+    </>
+  ) : null;
+
+  const sidebarToolbar = (() => {
+    switch (pane) {
+      case 'issues':
+        return (
+          <>
+            <button onClick={() => void handleBatchReviewVisible()}>Batch review</button>
+            <button onClick={() => void handleBatchClaimNext()}>Batch claim-next</button>
+            {selectedIssueActions}
+          </>
+        );
+      case 'pty':
+        return (
+          <>
+            <button onClick={() => void handleNewShell()}>New shell</button>
+            <button onClick={() => void handleAgentShell()}>Agent shell</button>
+            {selectedPty ? (
+              <>
+                <button onClick={() => void handleSendPty()}>Send</button>
+                <button onClick={() => void handlePtyCtrlC()}>Ctrl-C</button>
+                <button onClick={() => void handleClosePty(selectedPty)}>Close</button>
+                <button className="danger" onClick={() => void handleDeletePty(selectedPty)}>Delete</button>
+              </>
+            ) : null}
+          </>
+        );
+      case 'worktrees':
+        return (
+          <>
+            <button onClick={() => void handlePruneMergedWorktrees()}>Prune merged</button>
+            {selectedWorktree ? (
+              <>
+                <button onClick={() => void handleWorktreeShell(selectedWorktree)}>Shell</button>
+                <button className="danger" onClick={() => void handleWorktreeRemove(selectedWorktree)}>Remove</button>
+              </>
+            ) : null}
+          </>
+        );
+      case 'launch':
+        return (
+          <>
+            <button onClick={() => void handleCleanup(true)}>Audit cleanup</button>
+            <button onClick={() => void handleCleanup(false)}>Prune cleanup</button>
+            <button onClick={() => void handleCreateIssue()}>Create issue</button>
+          </>
+        );
+      default:
+        return null;
+    }
+  })();
+
+  return (
+    <div className="app-shell">
+      <AppHeader
+        agents={agents}
+        defaultAgent={defaultAgent}
+        selectedAgent={selectedAgent}
+        busy={busy}
+        onAgentChange={setSelectedAgent}
+        onNewShell={() => void handleNewShell()}
+        onNewAgent={() => void handleAgentShell()}
+        onRefresh={() => void load()}
+      />
+
+      <div className="workspace">
+        <DashboardSidebar
+          pane={pane}
+          counts={counts}
+          visibleIssues={visibleIssues}
+          visibleClaimCount={visibleClaimCount}
+          issueFilter={issueFilter}
+          selection={selection}
+          prs={prs}
+          ptys={ptys}
+          worktrees={worktrees}
+          files={files}
+          agents={agents}
+          selectedAgent={selectedAgent}
+          toolbar={sidebarToolbar}
+          onPaneChange={setPane}
+          onIssueFilterChange={setIssueFilter}
+          onSelect={setSelection}
+          onFocusPty={focusPty}
+          onSelectAgent={setSelectedAgent}
+          onClaimIssue={(issue) => void handleClaim(issue)}
+          onReviewIssue={(issue) => void handleReviewIssue(issue)}
+          onIssueTerminal={(issue) => void launchIssueShell(issue)}
+          onReviewPr={(pr) => void handleReviewPr(pr)}
+          onMergePr={(pr) => void handleMergePr(pr)}
+          onFixCi={(pr) => void handleFixCi(pr)}
+          onClosePty={(pty) => void handleClosePty(pty)}
+          onDeletePty={(pty) => void handleDeletePty(pty)}
+          onWorktreeShell={(worktree) => void handleWorktreeShell(worktree)}
+          onWorktreeRemove={(worktree) => void handleWorktreeRemove(worktree)}
+        />
+
+        <MainContent
+          pane={pane}
+          loading={loading}
+          snapshot={snapshot}
+          error={error}
+          selectedIssue={selectedIssue}
+          selectedPr={selectedPr}
+          selectedPty={selectedPty}
+          selectedWorktree={selectedWorktree}
+          selectedFile={selectedFile}
+          issueBody={issueBody}
+          prDiff={prDiff}
+          fileText={fileText}
+          ptyText={ptyText}
+          ptyStream={ptyStream}
+          agents={agents}
+          selectedAgent={selectedAgent}
+          issueTitle={issueTitle}
+          issueDraftBody={issueDraftBody}
+          launchText={launchText}
+          onIssueBodyChange={setIssueBody}
+          onPtyTextChange={setPtyText}
+          onIssueTitleChange={setIssueTitle}
+          onIssueDraftBodyChange={setIssueDraftBody}
+          onLaunchTextChange={setLaunchText}
+          onClaimIssue={(issue) => void handleClaim(issue)}
+          onReviewIssue={(issue) => void handleReviewIssue(issue)}
+          onSaveIssue={(issue) => void handleEditIssue(issue)}
+          onDeleteIssue={(issue) => void handleDeleteIssue(issue)}
+          onReviewPr={(pr) => void handleReviewPr(pr)}
+          onMergePr={(pr) => void handleMergePr(pr)}
+          onFixCi={(pr) => void handleFixCi(pr)}
+          onSendPty={() => void handleSendPty()}
+          onPtyCtrlC={() => void handlePtyCtrlC()}
+          onClosePty={(pty) => void handleClosePty(pty)}
+          onDeletePty={(pty) => void handleDeletePty(pty)}
+          onWorktreeShell={(worktree) => void handleWorktreeShell(worktree)}
+          onWorktreeRemove={(worktree) => void handleWorktreeRemove(worktree)}
+          onNewShell={() => void handleNewShell()}
+          onAgentShell={() => void handleAgentShell()}
+          onPropose={() => void handlePropose()}
+          onAuditCleanup={() => void handleCleanup(true)}
+          onPruneCleanup={() => void handleCleanup(false)}
+          onCreateIssue={() => void handleCreateIssue()}
+          onBatchReview={() => void handleBatchReviewVisible()}
+          onBatchClaimNext={() => void handleBatchClaimNext()}
+          onPruneMerged={() => void handlePruneMergedWorktrees()}
+        />
+
+        <div className={`right-rail ${dockCollapsed ? 'dock-is-collapsed' : ''}`}>
+          <TerminalDock
+            pty={dockPty}
+            sessions={manualPtys}
+            log={dockStream.text}
+            offset={dockStream.offset}
+            alive={dockStream.alive}
+            collapsed={dockCollapsed}
+            onClose={() => void handleDockClose()}
+            onDelete={() => void handleDockDelete()}
+            onToggle={() => setDockCollapsed((value) => !value)}
+            onNewAgent={() => void handleAgentShell()}
+            onFocusSession={focusPty}
+            onType={(value) => void handleDockType(value)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

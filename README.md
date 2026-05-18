@@ -50,10 +50,11 @@ For dogfooding `gitswarm` on its own repo, read [SELF_HOSTING.md](./SELF_HOSTING
 ```text
 gitswarm/
   bin/
+  backend/
   dashboard.py
   server.py
   github.py
-  ui.py
+  web/dist/
   orchestrate.sh
   SELF_HOSTING.md
   prompts/

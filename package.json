@@ -8,10 +8,17 @@
   },
   "files": [
     "bin",
+    "backend/__init__.py",
+    "backend/github_remote.py",
+    "backend/http.py",
+    "backend/pty_runtime.py",
+    "backend/reload.py",
+    "backend/routes.py",
+    "backend/static.py",
     "dashboard.py",
     "server.py",
     "github.py",
-    "ui.py",
+    "web/dist/**",
     "orchestrate.sh",
     "SELF_HOSTING.md",
     "prompts",
@@ -31,7 +38,10 @@
   "scripts": {
     "start": "node ./bin/gitswarm.js",
     "dashboard": "node ./bin/gitswarm.js",
-    "test": "python3 -m py_compile ./dashboard.py ./server.py ./github.py ./ui.py && bash -n ./orchestrate.sh && node --check ./bin/gitswarm.js && bash ./scripts/test-repo-arg.sh && bash ./scripts/test-init-doctor.sh"
+    "build:web": "npm --prefix web run build",
+    "typecheck:web": "npm --prefix web run typecheck",
+    "prepack": "npm --prefix web install && npm --prefix web run build",
+    "test": "python3 -m py_compile ./dashboard.py ./server.py ./github.py ./backend/*.py && npm --prefix web run typecheck && npm --prefix web run build && bash -n ./orchestrate.sh && node --check ./bin/gitswarm.js && bash ./scripts/test-repo-arg.sh && bash ./scripts/test-init-doctor.sh"
   },
   "keywords": [
     "github",

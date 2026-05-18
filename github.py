@@ -1,31 +1,12 @@
 #!/usr/bin/env python3
-"""Tiny zero-dep web dashboard for gitswarm.
-
-Browser-friendly tail -f over every file in state/, plus a quick view of
-worktrees and recent commits. Run with:
-
-    python3 dashboard.py [PORT]
-
-Opens at http://localhost:7777 by default. Localhost-only, no auth.
-"""
-import fcntl
-import http.server
+"""GitHub, issue, PR, and worktree helpers for gitswarm."""
 import json
 import os
-import pty
 import re
-import secrets
-import select
 import shlex
-import signal
-import struct
 import subprocess
-import sys
-import termios
-import threading
 import time
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = Path.cwd().resolve()
@@ -77,6 +58,43 @@ AGENTS = {
 }
 DEFAULT_AGENT = os.environ.get("GITSWARM_AGENT", "codex")
 
+from backend.pty_runtime import (
+    init as _init_pty_runtime,
+    spawn_pty,
+    pty_write,
+    pty_resize,
+    pty_read,
+    kill_pty,
+    delete_pty,
+    list_ptys,
+    live_issue_pty,
+    reap_dead_ptys,
+    pty_in_use,
+    spawn_shell_session,
+)
+from backend.github_remote import (
+    init as _init_github_remote,
+    gh_error,
+    is_transient_gh_error,
+    run_gh,
+    github_repo_slug,
+    gh_api_json,
+    gh_api_text,
+    fetch_pr_meta,
+    fetch_issue_meta,
+    fetch_issue_body,
+    update_issue,
+    close_issue,
+    create_issue,
+    fetch_pr_diff,
+    list_issues,
+    list_prs,
+    invalidate_caches,
+)
+
+_init_pty_runtime(REPO_ROOT, USER_SHELL)
+_init_github_remote(REPO_ROOT, STATE_DIR)
+
 
 def resolve_agent(agent_id, override_model=None, override_bin=None, override_yolo=None):
     """Look up an agent preset; allow per-call overrides for bin/model/yolo."""
@@ -123,365 +141,6 @@ def list_state_files():
         st = p.stat()
         out.append({"name": p.name, "size": st.st_size, "mtime": st.st_mtime})
     return out
-
-
-# ---------- PTY session manager ----------
-# Spawns child processes under a real pseudo-terminal so the browser xterm can
-# write keystrokes back to them. Output is buffered in memory; clients long-poll
-# /api/pty/stream with a byte offset.
-
-_PTY_SESSIONS = {}   # sid -> session dict
-_PTY_LOCK = threading.Lock()
-_PTY_BUF_CAP = 4 * 1024 * 1024  # 4MB per session; older bytes get trimmed
-
-
-def _set_winsize(fd, rows, cols):
-    try:
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-    except OSError:
-        pass
-
-
-def _clean_child_env():
-    """Return os.environ stripped of host-orchestration vars that would
-    confuse the agents we launch.
-
-    The dashboard is often started from inside another Claude Code session
-    (e.g. when an AI is helping the user set things up). That parent sets
-    things like CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1, an empty
-    ANTHROPIC_API_KEY, and overrides ANTHROPIC_BASE_URL / API_TIMEOUT_MS.
-    Those values are meant for the parent's own SDK plumbing — if they leak
-    into a child `claude` or `claude-minimax-free`, the child tries to
-    OAuth-refresh through a host that isn't there and times out.
-
-    Children should see what the user's real terminal would see: a clean
-    env, with auth picked up from ~/.claude (for vanilla claude) or set by
-    the wrapper itself (for cmf / claude-minimax).
-    """
-    env = os.environ.copy()
-    # Drop host-orchestration markers that tell `claude` to defer auth.
-    drop = [
-        "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
-        "CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH",
-        "CLAUDE_CODE_ENTRYPOINT",
-        "CLAUDE_AGENT_SDK_VERSION",
-        "CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES",
-        "CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL",
-        "CLAUDE_CODE_DISABLE_CRON",
-        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-        "CLAUDE_CODE_SESSION_ID",
-        "CLAUDE_CODE_REMOTE_SESSION_ID",
-        "CLAUDE_CODE_RESUME_INTERRUPTED_TURN",
-        "CLAUDE_CODE_RESUME_PROMPT",
-        "SESSION_ID",
-        "REMOTE_SESSION_ID",
-        "RESUME_INTERRUPTED_TURN",
-        "RESUME_PROMPT",
-        "MINIMAX_SESSION_ID",
-        "MINIMAX_REMOTE_SESSION_ID",
-        "MINIMAX_RESUME_INTERRUPTED_TURN",
-        "MINIMAX_RESUME_PROMPT",
-        "CMF_SESSION_ID",
-        "CMF_REMOTE_SESSION_ID",
-        "CMF_RESUME_INTERRUPTED_TURN",
-        "CMF_RESUME_PROMPT",
-    ]
-    for k in drop:
-        env.pop(k, None)
-    # An empty ANTHROPIC_API_KEY tells `claude` "use this empty key" and
-    # disables fallback to cached login. Treat empty as unset.
-    if "ANTHROPIC_API_KEY" in env and not env["ANTHROPIC_API_KEY"].strip():
-        env.pop("ANTHROPIC_API_KEY")
-    # ANTHROPIC_BASE_URL / API_TIMEOUT_MS / ANTHROPIC_MODEL inherited from a
-    # parent Claude Code session would override the wrapper script's own
-    # MiniMax routing. The cmf wrapper re-exports these itself, so dropping
-    # them at the boundary is safe — the wrapper re-sets what it needs.
-    for k in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
-              "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
-              "ANTHROPIC_DEFAULT_HAIKU_MODEL", "API_TIMEOUT_MS"):
-        env.pop(k, None)
-    return env
-
-
-def spawn_pty(argv, cwd=None, env_extra=None, label="", rows=30, cols=120, meta=None):
-    """Fork a child under a PTY, return the session dict. Output is collected
-    in sess['buf']; sess['drop'] counts how many bytes were trimmed from the
-    head so clients can detect missed data and reset."""
-    if isinstance(argv, str):
-        argv = shlex.split(argv)
-    sid = secrets.token_hex(6)
-    pid, fd = pty.fork()
-    if pid == 0:
-        try:
-            if cwd:
-                os.chdir(cwd)
-            env = _clean_child_env()
-            # Force a real terminal type for children. The dashboard itself is
-            # often launched from a non-interactive shell, which can leave TERM
-            # stuck at "dumb" and makes Codex refuse to start its TUI.
-            env["TERM"] = "xterm-256color"
-            env["COLORTERM"] = "truecolor"
-            if env_extra:
-                env.update(env_extra)
-            # Replace the inherited environ wholesale (clear first so the
-            # vars we just popped really vanish from the child's view).
-            os.environ.clear()
-            for k, v in env.items():
-                os.environ[k] = v
-            os.execvp(argv[0], argv)
-        except Exception as e:
-            os.write(2, f"\r\nexec failed: {e}\r\n".encode())
-            os._exit(127)
-    _set_winsize(fd, rows, cols)
-    sess = {
-        "sid": sid,
-        "fd": fd,
-        "pid": pid,
-        "argv": argv,
-        "cwd": cwd or os.getcwd(),
-        "label": label or " ".join(argv),
-        "started": time.time(),
-        "last_output": time.time(),
-        "last_input": time.time(),
-        "rows": rows, "cols": cols,
-        "buf": bytearray(),
-        "drop": 0,                       # bytes trimmed off the front
-        "cond": threading.Condition(),
-        "alive": True,
-        "exit_status": None,
-        "meta": dict(meta or {}),
-    }
-    with _PTY_LOCK:
-        _PTY_SESSIONS[sid] = sess
-    threading.Thread(target=_pty_reader, args=(sid,), daemon=True).start()
-    threading.Thread(target=_pty_waiter, args=(sid,), daemon=True).start()
-    return sess
-
-
-def _pty_reader(sid):
-    sess = _PTY_SESSIONS.get(sid)
-    if not sess:
-        return
-    fd = sess["fd"]
-    try:
-        while True:
-            try:
-                r, _, _ = select.select([fd], [], [], 1.0)
-            except (ValueError, OSError):
-                break
-            if fd in r:
-                try:
-                    chunk = os.read(fd, 65536)
-                except OSError:
-                    break
-                if not chunk:
-                    break
-                with sess["cond"]:
-                    sess["last_output"] = time.time()
-                    sess["buf"].extend(chunk)
-                    # Ring-buffer cap: trim oldest bytes if we exceed cap.
-                    excess = len(sess["buf"]) - _PTY_BUF_CAP
-                    if excess > 0:
-                        del sess["buf"][:excess]
-                        sess["drop"] += excess
-                    sess["cond"].notify_all()
-            if not sess["alive"]:
-                break
-    finally:
-        sess["alive"] = False
-        with sess["cond"]:
-            sess["cond"].notify_all()
-
-
-def _pty_waiter(sid):
-    sess = _PTY_SESSIONS.get(sid)
-    if not sess:
-        return
-    try:
-        _, status = os.waitpid(sess["pid"], 0)
-        sess["exit_status"] = status
-    except OSError:
-        pass
-    sess["alive"] = False
-    try:
-        os.close(sess["fd"])
-    except OSError:
-        pass
-    with sess["cond"]:
-        sess["cond"].notify_all()
-
-
-def pty_write(sid, data: bytes) -> bool:
-    sess = _PTY_SESSIONS.get(sid)
-    if not sess or not sess["alive"]:
-        return False
-    try:
-        os.write(sess["fd"], data)
-        sess["last_input"] = time.time()
-        return True
-    except OSError:
-        return False
-
-
-def pty_resize(sid, rows, cols):
-    sess = _PTY_SESSIONS.get(sid)
-    if not sess:
-        return False
-    _set_winsize(sess["fd"], rows, cols)
-    sess["rows"], sess["cols"] = rows, cols
-    return True
-
-
-def pty_read(sid, offset, timeout=20):
-    """Long-poll. Returns (data_bytes, new_logical_offset, alive, drop).
-
-    The "logical offset" is total bytes ever written (including trimmed).
-    drop is the count of bytes trimmed off the front so far; if the client's
-    offset is below drop, the client must reset (buffer hole)."""
-    sess = _PTY_SESSIONS.get(sid)
-    if not sess:
-        return None
-    deadline = time.time() + timeout
-    with sess["cond"]:
-        while True:
-            drop = sess["drop"]
-            logical_len = drop + len(sess["buf"])
-            if offset < drop:
-                # Client missed bytes; send whatever's in the buffer and bump them up.
-                data = bytes(sess["buf"])
-                return data, logical_len, sess["alive"], drop, True
-            buf_off = offset - drop
-            if buf_off < len(sess["buf"]):
-                data = bytes(sess["buf"][buf_off:])
-                return data, logical_len, sess["alive"], drop, False
-            if not sess["alive"]:
-                return b"", logical_len, False, drop, False
-            remaining = deadline - time.time()
-            if remaining <= 0:
-                return b"", logical_len, sess["alive"], drop, False
-            sess["cond"].wait(timeout=min(remaining, 5))
-
-
-def kill_pty(sid):
-    sess = _PTY_SESSIONS.get(sid)
-    if not sess:
-        return False
-    try:
-        os.killpg(os.getpgid(sess["pid"]), signal.SIGHUP)
-    except Exception:
-        try:
-            os.kill(sess["pid"], signal.SIGHUP)
-        except OSError:
-            pass
-    sess["alive"] = False
-    return True
-
-
-def delete_pty(sid):
-    sess = _PTY_SESSIONS.get(sid)
-    if not sess:
-        return False
-    kill_pty(sid)
-    with _PTY_LOCK:
-        sess = _PTY_SESSIONS.pop(sid, None)
-    if not sess:
-        return False
-    try:
-        os.close(sess["fd"])
-    except OSError:
-        pass
-    return True
-
-
-def list_ptys():
-    with _PTY_LOCK:
-        return [
-            {
-                "sid": s["sid"],
-                "label": s["label"],
-                "cwd": s["cwd"],
-                "alive": s["alive"],
-                "issue": s.get("meta", {}).get("issue"),
-                "kind": s.get("meta", {}).get("kind"),
-                "pr": s.get("meta", {}).get("pr"),
-                "started": s["started"],
-                "last_output": s.get("last_output") or s["started"],
-                "last_input": s.get("last_input") or s["started"],
-                "rows": s["rows"], "cols": s["cols"],
-            }
-            for s in _PTY_SESSIONS.values()
-        ]
-
-
-def live_issue_pty(issue_num: int):
-    """Return the live PTY session attached to an issue, if any."""
-    issue_num = int(issue_num)
-    with _PTY_LOCK:
-        for s in _PTY_SESSIONS.values():
-            if not s.get("alive"):
-                continue
-            meta = s.get("meta") or {}
-            if str(meta.get("issue")) == str(issue_num):
-                return s
-            label = s.get("label") or ""
-            if re.search(rf"#{re.escape(str(issue_num))}\b", label):
-                return s
-    return None
-
-
-def reap_dead_ptys(max_age_dead=600):
-    """Drop dead sessions older than max_age_dead seconds so they stop cluttering the list."""
-    now = time.time()
-    with _PTY_LOCK:
-        dead = [sid for sid, s in _PTY_SESSIONS.items()
-                if not s["alive"] and (now - s["started"]) > max_age_dead]
-        for sid in dead:
-            _PTY_SESSIONS.pop(sid, None)
-
-
-def _safe_relpath(p: Path) -> str:
-    try:
-        return str(p.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(p)
-
-
-def spawn_shell_session(cwd: Path, label: str = "", env_extra=None):
-    """Spawn a login-ish interactive shell under a PTY."""
-    if not cwd.exists():
-        return {"error": f"cwd does not exist: {cwd}"}
-    # -i ensures bash/zsh load rc files and run interactively.
-    argv = [USER_SHELL, "-i"]
-    sess = spawn_pty(argv, cwd=str(cwd), env_extra=env_extra,
-                     label=label or f"shell · {_safe_relpath(cwd)}")
-    return {"sid": sess["sid"], "label": sess["label"], "cwd": sess["cwd"]}
-
-
-def _text_preview(text, limit=180):
-    text = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not text:
-        return ""
-    blocks = [b.strip() for b in re.split(r"\n{2,}", text) if b.strip()]
-    snippet = blocks[0] if blocks else text.splitlines()[0]
-    snippet = re.sub(r"\s+", " ", snippet)
-    if len(snippet) > limit:
-        snippet = snippet[: max(0, limit - 1)].rstrip() + "…"
-    return snippet
-
-
-def _issue_label_suggestions(title, body):
-    hay = f"{title}\n{body}".lower()
-    suggestions = []
-    rules = [
-        ("needs-validation", [r"\bmaybe\b", r"\bshould we\b", r"\bidea\b", r"\bexplore\b", r"\bquestion\b"]),
-        ("agent-friendly", [r"\bagent\b", r"\bdashboard\b", r"\bterminal\b", r"\bworktree\b", r"\bpty\b"]),
-        ("claim-next", [r"\bimplement\b", r"\bfix\b", r"\badd\b", r"\bbuild\b", r"\bship\b"]),
-        ("good first issue", [r"\bsmall\b", r"\bbeginner\b", r"\bintro\b", r"\beasy\b"]),
-    ]
-    for label, pats in rules:
-        if any(re.search(pat, hay) for pat in pats):
-            suggestions.append(label)
-    return suggestions[:3]
 
 
 def _git_branch_merged(branch: str) -> bool:
@@ -552,13 +211,7 @@ def _worktree_status(path: Path):
 
 
 def _pty_in_use(worktree_path: Path) -> bool:
-    prefix = str(worktree_path)
-    with _PTY_LOCK:
-        for sess in _PTY_SESSIONS.values():
-            cwd = sess.get("cwd") or ""
-            if cwd == prefix or cwd.startswith(prefix + os.sep):
-                return True
-    return False
+    return pty_in_use(worktree_path)
 
 
 def git_branch_exists(branch: str) -> bool:
@@ -682,282 +335,6 @@ def prepare_issue_worktree(issue_num: int):
     }
 
 
-# Simple in-memory caches so panels don't hammer the gh API.
-_ISSUES_CACHE = {"ts": 0, "data": None}
-_PRS_CACHE = {"ts": 0, "data": None}
-
-
-def gh_error(exc):
-    if isinstance(exc, subprocess.CalledProcessError):
-        msg = (exc.stderr or exc.output or "").strip()
-        return msg or str(exc)
-    if isinstance(exc, subprocess.TimeoutExpired):
-        return f"timed out after {exc.timeout}s"
-    return str(exc)
-
-
-def is_transient_gh_error(msg):
-    low = (msg or "").lower()
-    return any(term in low for term in (
-        "eof", "timed out", "timeout", "connection reset",
-        "tls handshake", "502", "503", "504",
-    ))
-
-
-def run_gh(args, timeout=20, retries=2):
-    """Run gh with small retries for network EOFs, preserving final stderr."""
-    last = None
-    for attempt in range(retries + 1):
-        try:
-            result = subprocess.run(
-                ["gh", *args],
-                capture_output=True, text=True, timeout=timeout,
-            )
-        except subprocess.TimeoutExpired as e:
-            last = e
-            if attempt < retries:
-                time.sleep(0.4 * (attempt + 1))
-                continue
-            raise
-        if result.returncode == 0:
-            return result.stdout
-        last = subprocess.CalledProcessError(
-            result.returncode, ["gh", *args], output=result.stdout, stderr=result.stderr
-        )
-        if attempt >= retries or not is_transient_gh_error(gh_error(last)):
-            raise last
-        time.sleep(0.4 * (attempt + 1))
-    raise last
-
-
-def github_repo_slug():
-    remote = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "remote", "get-url", "origin"],
-        capture_output=True, text=True, timeout=5, check=True,
-    ).stdout.strip()
-    m = re.search(r"github\.com[:/]([^/]+)/(.+?)(?:\.git)?$", remote.rstrip("/"))
-    if m:
-        return f"{m.group(1)}/{m.group(2)}"
-    return run_gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], timeout=10).strip()
-
-
-def gh_api_json(path, timeout=20, retries=2):
-    return json.loads(run_gh(["api", path], timeout=timeout, retries=retries))
-
-
-def gh_api_text(path, headers=None, timeout=20, retries=2):
-    args = ["api"]
-    for header in headers or []:
-        args.extend(["-H", header])
-    args.append(path)
-    return run_gh(args, timeout=timeout, retries=retries)
-
-
-def fetch_pr_meta(pr_num: int):
-    slug = github_repo_slug()
-    raw = gh_api_json(f"repos/{slug}/pulls/{pr_num}", timeout=20, retries=2)
-    meta = {
-        "number": raw.get("number"),
-        "title": raw.get("title") or "",
-        "body": raw.get("body") or "",
-        "url": raw.get("html_url"),
-        "headRefName": (raw.get("head") or {}).get("ref") or "",
-        "isDraft": bool(raw.get("draft")),
-        "mergeable": raw.get("mergeable"),
-        "state": raw.get("state"),
-        "mergedAt": raw.get("merged_at"),
-        "reviewDecision": "",
-    }
-    try:
-        reviews = gh_api_json(f"repos/{slug}/pulls/{pr_num}/reviews", timeout=20, retries=1)
-        latest_by_user = {}
-        for review in reviews if isinstance(reviews, list) else []:
-            user = ((review.get("user") or {}).get("login") or str(review.get("user") or ""))
-            state = (review.get("state") or "").upper()
-            if user and state in {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}:
-                latest_by_user[user] = state
-        states = set(latest_by_user.values())
-        if "CHANGES_REQUESTED" in states:
-            meta["reviewDecision"] = "CHANGES_REQUESTED"
-        elif "APPROVED" in states:
-            meta["reviewDecision"] = "APPROVED"
-    except Exception:
-        pass
-    return meta
-
-
-def fetch_issue_meta(issue_num):
-    slug = github_repo_slug()
-    raw = gh_api_json(f"repos/{slug}/issues/{issue_num}", timeout=15, retries=2)
-    return {
-        "body": raw.get("body") or "",
-        "title": raw.get("title") or "",
-        "url": raw.get("html_url") or "",
-        "labels": [
-            label.get("name")
-            for label in raw.get("labels", [])
-            if isinstance(label, dict) and label.get("name")
-        ],
-    }
-
-
-def fetch_issue_body(issue_num: str):
-    return fetch_issue_meta(issue_num).get("body") or ""
-
-
-def update_issue(issue_num: int, title=None, body=None, state=None):
-    if not (1 <= issue_num <= 9999):
-        return {"error": "bad issue number"}
-    slug = github_repo_slug()
-    args = ["api", "-X", "PATCH"]
-    if title is not None:
-        args.extend(["-f", f"title={title}"])
-    if body is not None:
-        args.extend(["-f", f"body={body}"])
-    if state is not None:
-        args.extend(["-f", f"state={state}"])
-    args.append(f"repos/{slug}/issues/{issue_num}")
-    try:
-        raw = run_gh(args, timeout=20, retries=2)
-        invalidate_caches()
-        return json.loads(raw)
-    except Exception as e:
-        return {"error": gh_error(e)}
-
-
-def close_issue(issue_num: int):
-    return update_issue(issue_num, state="closed")
-
-
-def create_issue(title: str, body: str = ""):
-    title = (title or "").strip()
-    if not title:
-        return {"error": "title is required"}
-    slug = github_repo_slug()
-    args = ["issue", "create", "--repo", slug, "--title", title]
-    args.extend(["--body", body or ""])
-    try:
-        out = run_gh(args, timeout=30, retries=2).strip()
-        invalidate_caches()
-        m = re.search(r"/issues/(\d+)", out)
-        return {
-            "number": int(m.group(1)) if m else None,
-            "url": out or "",
-            "title": title,
-        }
-    except Exception as e:
-        return {"error": gh_error(e)}
-
-
-def fetch_pr_diff(pr_num: int):
-    slug = github_repo_slug()
-    path = f"repos/{slug}/pulls/{pr_num}"
-    try:
-        return gh_api_text(
-            path,
-            headers=["Accept: application/vnd.github.v3.diff"],
-            timeout=30,
-            retries=2,
-        )
-    except Exception as rest_err:
-        try:
-            return run_gh(["pr", "diff", str(pr_num)], timeout=30, retries=1)
-        except Exception as diff_err:
-            raise RuntimeError(f"REST diff failed: {gh_error(rest_err)}; gh pr diff failed: {gh_error(diff_err)}")
-
-
-def list_issues():
-    if _ISSUES_CACHE["data"] and time.time() - _ISSUES_CACHE["ts"] < 20:
-        return _ISSUES_CACHE["data"]
-    try:
-        out = subprocess.run(
-            ["gh", "issue", "list", "--state", "open",
-             "--limit", "100", "--json", "number,title,body,labels,url,author,assignees,comments,createdAt,updatedAt,state"],
-            capture_output=True, text=True, timeout=20, check=True,
-        ).stdout
-        issues = json.loads(out)
-        for it in issues:
-            it["labels"] = [l["name"] for l in it.get("labels", [])]
-            it["assignees"] = [a.get("login") for a in it.get("assignees", []) if a.get("login")]
-            it["in_progress"] = "in-progress" in it["labels"]
-            it["claim_next"] = "claim-next" in it["labels"]
-            it["parked"] = "needs-validation" in it["labels"]
-            it["body"] = it.get("body") or ""
-            it["summary"] = _text_preview(it["body"], 180) or "no body yet"
-            it["suggested_labels"] = _issue_label_suggestions(it.get("title") or "", it["body"])
-            author = it.get("author") or {}
-            it["author"] = author.get("login") if isinstance(author, dict) else ""
-            it["comment_count"] = it.get("comments") or 0
-        _ISSUES_CACHE.update({"ts": time.time(), "data": issues})
-        return issues
-    except Exception as e:
-        return [{"error": str(e)}]
-
-
-def list_prs():
-    if _PRS_CACHE["data"] and time.time() - _PRS_CACHE["ts"] < 20:
-        return _PRS_CACHE["data"]
-    try:
-        out = subprocess.run(
-            ["gh", "pr", "list", "--state", "open", "--limit", "60",
-             "--json", "number,title,body,isDraft,headRefName,url,reviewDecision,mergeable,labels,statusCheckRollup,comments,author,createdAt,updatedAt"],
-            capture_output=True, text=True, timeout=20, check=True,
-        ).stdout
-        prs = json.loads(out)
-        for pr in prs:
-            pr["labels"] = [l["name"] for l in pr.get("labels", [])]
-            # rollup CI state
-            checks = pr.get("statusCheckRollup") or []
-            ci_states = [(c.get("conclusion") or c.get("status") or "").upper() for c in checks]
-            failing_checks = []
-            pending_checks = []
-            for c in checks if isinstance(checks, list) else []:
-                name = c.get("name") or c.get("context") or "check"
-                state = (c.get("conclusion") or c.get("status") or "").upper()
-                if state in ("FAILURE", "ERROR", "ACTION_REQUIRED"):
-                    failing_checks.append(name)
-                elif state not in ("SUCCESS", "COMPLETED", "NEUTRAL", "SKIPPED"):
-                    pending_checks.append(name)
-            if not ci_states:
-                pr["ci"] = "none"
-            elif any(s == "FAILURE" for s in ci_states):
-                pr["ci"] = "fail"
-            elif all(s in ("SUCCESS", "COMPLETED", "NEUTRAL", "SKIPPED") for s in ci_states):
-                pr["ci"] = "pass"
-            else:
-                pr["ci"] = "pending"
-            pr["failing_checks"] = failing_checks
-            pr["pending_checks"] = pending_checks
-            pr["body"] = pr.get("body") or ""
-            pr["summary"] = _text_preview(pr["body"], 180) or "no body yet"
-            author = pr.get("author") or {}
-            pr["author"] = author.get("login") if isinstance(author, dict) else ""
-            del pr["statusCheckRollup"]
-            # Did codex already post a verdict? Look for our signature header.
-            comments = pr.get("comments") or []
-            pr["reviewed_by_codex"] = any(
-                (c.get("body") or "").startswith("# Reviewer-agent verdict")
-                for c in comments
-            )
-            # If we have a locally-saved comment URL, surface it.
-            url_file = STATE_DIR / f"review-{pr['number']}.url"
-            try:
-                if url_file.exists():
-                    pr["review_url"] = url_file.read_text().strip() or None
-            except Exception:
-                pass
-            del pr["comments"]
-        _PRS_CACHE.update({"ts": time.time(), "data": prs})
-        return prs
-    except Exception as e:
-        return [{"error": str(e)}]
-
-
-def invalidate_caches():
-    _ISSUES_CACHE["ts"] = 0
-    _PRS_CACHE["ts"] = 0
-
-
 def prepare_pr_review(pr_num: int):
     """Build the reviewer prompt for a PR — mirrors orchestrate.sh's spawn_reviewer
     setup but inline so the dashboard can spawn the codex exec under a PTY
@@ -1036,8 +413,6 @@ def prepare_issue_review(issue_num: int):
         return {"error": f"gh api issue #{issue_num}: {gh_error(e)}"}
     body = meta.get("body") or ""
     title = meta.get("title") or ""
-    body_file = STATE_DIR / f"issue-review-{issue_num}.body.md"
-    body_file.write_text(body)
 
     template_path = PROMPTS_DIR / "review-issue.md"
     if not template_path.exists():
@@ -1057,6 +432,25 @@ def prepare_issue_review(issue_num: int):
         "body_size": len(body),
         "url": meta.get("url"),
     }
+
+
+def extract_issue_review_comment(text: str):
+    """Pull the markdown verdict block out of the PTY transcript.
+
+    The issue reviewer prompt requires the verdict to start with
+    `# Reviewer-agent verdict`. We trim any wrapper noise before that marker
+    and stop before the server-side exit banner if it appears.
+    """
+    if not text:
+        return ""
+    start = text.find("# Reviewer-agent verdict")
+    if start < 0:
+        return ""
+    tail = text[start:]
+    end = tail.find("\n────")
+    if end >= 0:
+        tail = tail[:end]
+    return tail.strip()
 
 
 def prepare_merge(pr_num: int):

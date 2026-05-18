@@ -3,11 +3,11 @@
 #
 #   ./scripts/dev.sh [PORT]
 #
-# Watches ui.py, server.py, github.py via stat(1) mtime polling (zero deps;
-# works on macOS BSD stat and GNU stat). When any of them change, kills the
-# running dashboard and respawns it. The browser then picks up the new build
-# automatically because ui.py polls /api/agents.code_mtime and reloads on
-# change.
+# Watches Python backend files and React source/build inputs via stat(1) mtime
+# polling (zero deps; works on macOS BSD stat and GNU stat). When any of them
+# change, rebuilds the frontend if needed, kills the running dashboard, and
+# respawns it. The browser reloads automatically when /api/agents reports a
+# newer code_mtime.
 #
 # Ctrl-C twice to exit (once to kill the dashboard, once to break the loop).
 
@@ -16,12 +16,23 @@ PORT="${1:-7778}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-WATCH=(ui.py server.py github.py)
+WATCH=(server.py github.py backend web/src web/index.html web/package.json web/tsconfig.json web/vite.config.ts shared/api-contract.md)
 
 # Portable mtime — BSD stat (macOS) vs GNU stat.
 mtimes() {
-  if stat -f %m "${WATCH[@]}" 2>/dev/null; then return; fi
-  stat -c %Y "${WATCH[@]}" 2>/dev/null
+  find "${WATCH[@]}" -type f -print0 2>/dev/null |
+    while IFS= read -r -d '' path; do
+      stat -f "%m %N" "$path" 2>/dev/null || stat -c "%Y %n" "$path" 2>/dev/null
+    done |
+    sort
+}
+
+build_frontend() {
+  if [ ! -d web/node_modules ]; then
+    echo "[dev] web/node_modules missing — run: npm --prefix web install"
+    return 1
+  fi
+  npm --prefix web run build >/dev/null
 }
 
 cleanup() {
@@ -34,6 +45,7 @@ trap cleanup EXIT INT TERM
 
 echo "[dev] gitswarm dashboard on :$PORT — watching ${WATCH[*]}"
 while true; do
+  build_frontend || exit 1
   python3 server.py "$PORT" &
   PID=$!
   BEFORE="$(mtimes | tr '\n' ' ')"

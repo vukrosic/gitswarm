@@ -32,11 +32,11 @@ $ISSUE_BODY
 
 ## How to deliver your verdict
 
-You have a writable env var `$REVIEW_OUT` pointing at an empty file. **Write your full verdict to that file** and then exit. The wrapper around you posts the file via `gh issue comment $ISSUE_NUMBER -F $REVIEW_OUT` once you stop. Do NOT call `gh issue comment` yourself. Do NOT only echo the verdict to the chat - the chat is for thinking; the file is the deliverable.
+Write your full verdict directly in the terminal using the required markdown structure, then exit. Do NOT call `gh issue comment` yourself. Do NOT only echo the verdict to the chat - the chat is for thinking; the terminal output is the deliverable and will be posted automatically once you stop.
 
 ## Required output format
 
-Write to `$REVIEW_OUT` exactly this markdown structure. Omit sections only when they don't apply.
+Write the verdict in exactly this markdown structure. Omit sections only when they don't apply.
 
 ```markdown
 # Reviewer-agent verdict
