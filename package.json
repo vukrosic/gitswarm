@@ -1,0 +1,39 @@
+{
+  "name": "gitswarm",
+  "version": "0.1.0",
+  "description": "GitHub issue, PR, and agent dashboard for managing AI work across repositories.",
+  "type": "module",
+  "bin": {
+    "gitswarm": "./bin/gitswarm.js"
+  },
+  "files": [
+    "bin",
+    "dashboard.py",
+    "orchestrate.sh",
+    "prompts",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vukrosic/gitswarm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vukrosic/gitswarm/issues"
+  },
+  "homepage": "https://github.com/vukrosic/gitswarm#readme",
+  "scripts": {
+    "start": "node ./bin/gitswarm.js",
+    "test": "python3 -m py_compile ./dashboard.py && bash -n ./orchestrate.sh && node --check ./bin/gitswarm.js"
+  },
+  "keywords": [
+    "github",
+    "issues",
+    "pull-requests",
+    "agents",
+    "dashboard"
+  ],
+  "license": "MIT"
+}

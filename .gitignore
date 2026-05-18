@@ -1,0 +1,7 @@
+.gitswarm/
+state/
+.agent-worktrees/
+node_modules/
+*.log
+__pycache__/
+*.pyc
