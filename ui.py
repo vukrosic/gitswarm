@@ -53,6 +53,8 @@ section.pr-view .ctl{display:none;}
 #terminal-dock .dock-subtitle{font-size:11px;color:#6e7681;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #terminal-dock .dock-toggle{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit;}
 #terminal-dock .dock-toggle:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+#main-resizer{position:absolute;top:0;bottom:0;left:calc(100% - 44vw);width:6px;margin-left:-3px;cursor:col-resize;z-index:25;background:transparent;}
+#main-resizer:hover,#main-resizer.dragging{background:rgba(88,166,255,0.18);}
 #agent-tab-bar{display:none;gap:4px;flex-wrap:wrap;padding:6px 10px;background:#0d1117;border-bottom:1px solid #21262d;flex-shrink:0;}
 #agent-tab-bar.show{display:flex;}
 #agent-tab-bar .agent-tab{background:#161b22;border:1px solid #30363d;border-radius:999px;padding:4px 10px;cursor:pointer;font-size:11px;color:#8b949e;display:flex;align-items:center;gap:6px;max-width:220px;}
@@ -67,6 +69,8 @@ section.pr-view .ctl{display:none;}
 #dock-open-btn:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 section.dock-collapsed #dock-open-btn{display:block;}
 #workspace #tab-bar{padding-right:52px;}
+#dock-resizer{position:absolute;top:0;bottom:0;right:calc(44vw - 3px);width:6px;cursor:col-resize;z-index:26;background:transparent;}
+#dock-resizer:hover,#dock-resizer.dragging{background:rgba(88,166,255,0.18);}
 #term-wrap{flex:1;padding:8px;overflow:hidden;background:#000;min-height:0;}
 #terminal-root{height:100%;}
 .xterm{height:100%;}
@@ -333,6 +337,8 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
   </div>
   <section>
     <button id="dock-open-btn" title="Reopen the terminal dock">terminal ⟩</button>
+    <div id="main-resizer"></div>
+    <div id="dock-resizer"></div>
     <div id="workspace">
       <div id="tab-bar"></div>
       <h2><span id="title">pick something →</span>
@@ -382,6 +388,9 @@ term.loadAddon(new WebLinksAddon.WebLinksAddon());
 let termAttached = false;
 let inputHandler = null;
 let terminalDockCollapsed = localStorage.getItem('gitswarm.terminalDockCollapsed') === '1';
+let terminalDockWidth = parseInt(localStorage.getItem('gitswarm.terminalDockWidth') || '0', 10);
+let resizingDock = false;
+let resizingMain = false;
 
 function fitTermNow() {
   try {
@@ -399,18 +408,65 @@ function applyTerminalDockState() {
   const btn = document.getElementById('dockToggleBtn');
   const openBtn = document.getElementById('dock-open-btn');
   if (!dock || !btn) return;
+  const width = Math.max(320, Math.min(760, terminalDockWidth || Math.round(window.innerWidth * 0.44)));
+  dock.style.width = terminalDockCollapsed ? '0px' : `${width}px`;
+  dock.style.minWidth = terminalDockCollapsed ? '0px' : `${width}px`;
+  dock.style.maxWidth = terminalDockCollapsed ? '0px' : `${width}px`;
   dock.classList.toggle('collapsed', terminalDockCollapsed);
   if (section) section.classList.toggle('dock-collapsed', terminalDockCollapsed);
   btn.textContent = terminalDockCollapsed ? '⟨ open' : '⟩ collapse';
   btn.title = terminalDockCollapsed ? 'Expand the terminal dock' : 'Collapse the terminal dock';
   if (openBtn) openBtn.title = terminalDockCollapsed ? 'Reopen the terminal dock' : 'Terminal dock is open';
   localStorage.setItem('gitswarm.terminalDockCollapsed', terminalDockCollapsed ? '1' : '0');
+  if (!terminalDockCollapsed) localStorage.setItem('gitswarm.terminalDockWidth', String(width));
   requestAnimationFrame(() => fitTermNow());
 }
 
 function toggleTerminalDock() {
   terminalDockCollapsed = !terminalDockCollapsed;
   applyTerminalDockState();
+}
+
+function setupSplitResizers() {
+  const section = document.querySelector('section');
+  const dock = document.getElementById('terminal-dock');
+  const mainResizer = document.getElementById('main-resizer');
+  const dockResizer = document.getElementById('dock-resizer');
+  if (!section || !dock || !mainResizer || !dockResizer) return;
+  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+  const updateFromX = (x) => {
+    const width = clamp(window.innerWidth - x, 320, Math.max(320, window.innerWidth - 420));
+    terminalDockWidth = width;
+    dock.style.width = `${width}px`;
+    dock.style.minWidth = `${width}px`;
+    dock.style.maxWidth = `${width}px`;
+    localStorage.setItem('gitswarm.terminalDockWidth', String(width));
+    fitTermNow();
+  };
+  const startDrag = (kind) => (e) => {
+    if (terminalDockCollapsed) return;
+    e.preventDefault();
+    const target = kind === 'main' ? mainResizer : dockResizer;
+    target.classList.add('dragging');
+    if (kind === 'main') resizingMain = true;
+    else resizingDock = true;
+    const move = (ev) => {
+      if (kind === 'main') updateFromX(ev.clientX);
+      else updateFromX(ev.clientX);
+    };
+    const up = () => {
+      target.classList.remove('dragging');
+      resizingMain = false;
+      resizingDock = false;
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      fitTermNow();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  mainResizer.onmousedown = startDrag('main');
+  dockResizer.onmousedown = startDrag('dock');
 }
 
 function closeCurrentTerminal() {
@@ -1781,6 +1837,14 @@ document.getElementById('agent-tab-bar').addEventListener('click', (e) => {
     e.stopPropagation();
     const sid = closeBtn.dataset.sid;
     if (!confirm('Close this main agent session? Any running command will be killed.')) return;
+    if (view && view.kind === 'pty' && String(view.sid) === String(sid)) {
+      stopStreams();
+      view = null;
+      inputHandler = null;
+      document.getElementById('title').textContent = 'pick something →';
+      document.getElementById('pr-bar').className = '';
+      term.reset();
+    }
     fetch('/api/pty/delete', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({sid})}).catch(()=>{});
     listPtys();
@@ -1918,6 +1982,7 @@ async function deletePty(sid, label) {
   if (!sid) return;
   const alive = allPtys.find(s => s.sid === sid)?.alive;
   if (alive && !confirm('Close this live session?')) return;
+  const wasActive = view && view.kind === 'pty' && String(view.sid) === String(sid);
   try {
     const r = await fetch('/api/pty/delete', {
       method: 'POST',
@@ -1929,7 +1994,7 @@ async function deletePty(sid, label) {
       showToast('error: ' + (d.error || 'close failed'), 'err');
       return;
     }
-    if (view && view.kind === 'pty' && view.sid === sid) {
+    if (wasActive) {
       stopStreams();
       view = null;
       inputHandler = null;
@@ -1941,6 +2006,7 @@ async function deletePty(sid, label) {
     showToast(`closed session ${label || sid}`, 'ok');
     await listPtys();
     renderAgentTabs();
+    renderTabBar();
   } catch(e) {
     showToast('close failed: ' + e, 'err');
   }
@@ -2162,6 +2228,7 @@ async function checkCodeMtime() {
 loadAgents().then(d => { if (d && d.code_mtime) _codeMtime = d.code_mtime; });
 showSidebarTab(activeSidebarTab);
 applyTerminalDockState();
+setupSplitResizers();
 listFiles(); listWorktrees(); listIssues(); listPRs(); listPtys();
 setInterval(listFiles, 5000);
 setInterval(listWorktrees, 4000);
