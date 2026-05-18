@@ -9,7 +9,7 @@ Squash-merge PR #$PR_NUMBER (branch `$PR_BRANCH`) into `main`, deleting the bran
 ## Pre-flight
 
 1. `gh api "$REPO_API_PATH" --jq '{mergeable, draft, state, merged_at}'` — confirm it is open and mergeable.
-   - If `draft: true` → ask the user whether to mark ready (`gh pr ready $PR_NUMBER`) or abort.
+   - If `draft: true` → run `gh pr ready $PR_NUMBER` to mark it ready for merge, then continue.
    - If `mergeable` is `false` or `null` → tell the user the current state before attempting the merge.
 2. `gh pr checks $PR_NUMBER` — show CI state. If anything is `FAIL`, ask before proceeding.
 
@@ -20,6 +20,12 @@ Try the simple squash:
 gh pr merge $PR_NUMBER --squash --delete-branch
 ```
 If it succeeds, print the merge commit SHA and stop. Done.
+
+**Post-merge**: after a successful merge, always run:
+```
+git fetch origin main && git merge --ff-only origin/main
+```
+so your local `main` stays up-to-date with the remote.
 
 ## Conflict path
 

@@ -713,6 +713,7 @@ function renderIssues() {
         <div class="row">
           ${claimButton}
           <button onclick="openIssueInMain(${it.number})" title="Open full issue body in the main pane">📖 read</button>
+          <button onclick="deleteIssueFromUI(${it.number})" title="Close this GitHub issue">✕ close issue</button>
           <button onclick="window.open('${it.url}', '_blank')" title="Open issue on GitHub">↗ GitHub</button>
           <button onclick="launchIssue(${it.number}, 'watch')" ${locked ? 'disabled' : ''} title="Spawn orchestrator (headless codex exec); auto-switch terminal to log">▶ watch</button>
           <button class="headless" onclick="launchIssue(${it.number}, 'headless')" ${locked ? 'disabled' : ''} title="Spawn orchestrator in background; don't switch view">⌁ bg</button>
