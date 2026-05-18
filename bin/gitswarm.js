@@ -31,6 +31,16 @@ if (parsed.command === 'doctor') {
   process.exit(code);
 }
 
+if (parsed.command === 'launch' || parsed.command === 'prompt') {
+  try {
+    const code = await launchPromptSession(parsed.repo, parsed.forwarded);
+    process.exit(code);
+  } catch (err) {
+    console.error(`gitswarm ${parsed.command}: ${err.message}`);
+    process.exit(1);
+  }
+}
+
 launchDashboard(parsed.repo, parsed.forwarded);
 
 function parseArgs(args) {
@@ -77,7 +87,7 @@ function parseArgs(args) {
 }
 
 function isCommand(arg) {
-  return ['dashboard', 'init', 'doctor', 'help', '--help', '-h'].includes(arg);
+  return ['dashboard', 'init', 'doctor', 'launch', 'prompt', 'help', '--help', '-h'].includes(arg);
 }
 
 function printHelp() {
@@ -87,11 +97,14 @@ Usage:
   gitswarm [--repo PATH] [dashboard [PORT]]
   gitswarm init [--repo PATH]
   gitswarm doctor [--repo PATH]
+  gitswarm launch [options] "prompt text"
 
 Commands:
   dashboard   launch the localhost dashboard (default)
   init        write .gitswarm/config.json and local scaffolding
   doctor      check git + gh + repo connectivity
+  launch      launch a fresh agent PTY with a prompt and leave it running
+  prompt      alias for launch
 
 Examples:
   gitswarm --repo /path/to/repo
@@ -278,4 +291,101 @@ function launchDashboard(repoRoot, forwarded) {
     }
     process.exit(code ?? 1);
   });
+}
+
+function parseLaunchArgs(args) {
+  let agent = process.env.GITSWARM_AGENT || 'codex';
+  let model = '';
+  let cwd = '';
+  let port = '';
+  let label = '';
+  let prompt = '';
+
+  const rest = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--agent' && args[i + 1]) { agent = args[++i]; continue; }
+    if (arg.startsWith('--agent=')) { agent = arg.slice('--agent='.length); continue; }
+    if (arg === '--model' && args[i + 1]) { model = args[++i]; continue; }
+    if (arg.startsWith('--model=')) { model = arg.slice('--model='.length); continue; }
+    if (arg === '--cwd' && args[i + 1]) { cwd = args[++i]; continue; }
+    if (arg.startsWith('--cwd=')) { cwd = arg.slice('--cwd='.length); continue; }
+    if (arg === '--port' && args[i + 1]) { port = args[++i]; continue; }
+    if (arg.startsWith('--port=')) { port = arg.slice('--port='.length); continue; }
+    if (arg === '--label' && args[i + 1]) { label = args[++i]; continue; }
+    if (arg.startsWith('--label=')) { label = arg.slice('--label='.length); continue; }
+    if (arg === '--') {
+      rest.push(...args.slice(i + 1));
+      break;
+    }
+    rest.push(arg);
+  }
+  prompt = rest.join(' ').trim();
+  return { agent, model, cwd, port, label, prompt };
+}
+
+async function ensureDashboardRunning(repoRoot, port) {
+  const config = loadConfig(repoRoot);
+  const resolvedPort = String(port || config?.dashboard_port || 7777);
+  const url = `http://127.0.0.1:${resolvedPort}`;
+  try {
+    const res = await fetch(`${url}/api/agents`, { method: 'GET' });
+    if (res.ok) return resolvedPort;
+  } catch {
+    // fall through and start a background dashboard
+  }
+
+  const logDir = join(repoRoot, '.gitswarm');
+  mkdirSync(logDir, { recursive: true });
+  const child = spawn('python3', [dashboardScript, resolvedPort], {
+    cwd: repoRoot,
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  });
+  child.unref();
+
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const res = await fetch(`${url}/api/agents`, { method: 'GET' });
+      if (res.ok) return resolvedPort;
+    } catch {
+      // retry
+    }
+    await new Promise((rs) => setTimeout(rs, 200));
+  }
+  throw new Error(`dashboard did not start on ${url}`);
+}
+
+async function launchPromptSession(repoRoot, forwarded) {
+  const opts = parseLaunchArgs(forwarded);
+  if (!opts.prompt) {
+    throw new Error('usage: gitswarm launch [--agent codex] [--model MODEL] [--cwd PATH] [--port PORT] "prompt text"');
+  }
+
+  const port = await ensureDashboardRunning(repoRoot, opts.port);
+  const url = `http://127.0.0.1:${port}`;
+  const body = {
+    kind: 'agent-prompt',
+    agent: opts.agent,
+    model: opts.model || undefined,
+    cwd: opts.cwd || undefined,
+    label: opts.label || opts.prompt,
+    prompt: opts.prompt,
+    rows: 30,
+    cols: 120,
+  };
+  const res = await fetch(`${url}/api/pty/new`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    throw new Error(data.error || `launch failed (${res.status})`);
+  }
+  console.log(`gitswarm launch: started ${data.agent || opts.agent} · ${data.label || data.sid}`);
+  console.log(`gitswarm launch: dashboard ${url}`);
+  console.log(`gitswarm launch: sid ${data.sid}`);
+  return 0;
 }

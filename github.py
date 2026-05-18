@@ -169,6 +169,22 @@ def _clean_child_env():
         "CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL",
         "CLAUDE_CODE_DISABLE_CRON",
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_REMOTE_SESSION_ID",
+        "CLAUDE_CODE_RESUME_INTERRUPTED_TURN",
+        "CLAUDE_CODE_RESUME_PROMPT",
+        "SESSION_ID",
+        "REMOTE_SESSION_ID",
+        "RESUME_INTERRUPTED_TURN",
+        "RESUME_PROMPT",
+        "MINIMAX_SESSION_ID",
+        "MINIMAX_REMOTE_SESSION_ID",
+        "MINIMAX_RESUME_INTERRUPTED_TURN",
+        "MINIMAX_RESUME_PROMPT",
+        "CMF_SESSION_ID",
+        "CMF_REMOTE_SESSION_ID",
+        "CMF_RESUME_INTERRUPTED_TURN",
+        "CMF_RESUME_PROMPT",
     ]
     for k in drop:
         env.pop(k, None)
@@ -187,7 +203,7 @@ def _clean_child_env():
     return env
 
 
-def spawn_pty(argv, cwd=None, env_extra=None, label="", rows=30, cols=120):
+def spawn_pty(argv, cwd=None, env_extra=None, label="", rows=30, cols=120, meta=None):
     """Fork a child under a PTY, return the session dict. Output is collected
     in sess['buf']; sess['drop'] counts how many bytes were trimmed from the
     head so clients can detect missed data and reset."""
@@ -233,6 +249,7 @@ def spawn_pty(argv, cwd=None, env_extra=None, label="", rows=30, cols=120):
         "cond": threading.Condition(),
         "alive": True,
         "exit_status": None,
+        "meta": dict(meta or {}),
     }
     with _PTY_LOCK:
         _PTY_SESSIONS[sid] = sess
@@ -360,6 +377,22 @@ def kill_pty(sid):
     return True
 
 
+def delete_pty(sid):
+    sess = _PTY_SESSIONS.get(sid)
+    if not sess:
+        return False
+    kill_pty(sid)
+    with _PTY_LOCK:
+        sess = _PTY_SESSIONS.pop(sid, None)
+    if not sess:
+        return False
+    try:
+        os.close(sess["fd"])
+    except OSError:
+        pass
+    return True
+
+
 def list_ptys():
     with _PTY_LOCK:
         return [
@@ -368,6 +401,9 @@ def list_ptys():
                 "label": s["label"],
                 "cwd": s["cwd"],
                 "alive": s["alive"],
+                "issue": s.get("meta", {}).get("issue"),
+                "kind": s.get("meta", {}).get("kind"),
+                "pr": s.get("meta", {}).get("pr"),
                 "started": s["started"],
                 "last_output": s.get("last_output") or s["started"],
                 "last_input": s.get("last_input") or s["started"],
@@ -375,6 +411,22 @@ def list_ptys():
             }
             for s in _PTY_SESSIONS.values()
         ]
+
+
+def live_issue_pty(issue_num: int):
+    """Return the live PTY session attached to an issue, if any."""
+    issue_num = int(issue_num)
+    with _PTY_LOCK:
+        for s in _PTY_SESSIONS.values():
+            if not s.get("alive"):
+                continue
+            meta = s.get("meta") or {}
+            if str(meta.get("issue")) == str(issue_num):
+                return s
+            label = s.get("label") or ""
+            if re.search(rf"#{re.escape(str(issue_num))}\b", label):
+                return s
+    return None
 
 
 def reap_dead_ptys(max_age_dead=600):
@@ -753,6 +805,30 @@ def fetch_issue_body(issue_num: str):
     return fetch_issue_meta(issue_num).get("body") or ""
 
 
+def update_issue(issue_num: int, title=None, body=None, state=None):
+    if not (1 <= issue_num <= 9999):
+        return {"error": "bad issue number"}
+    slug = github_repo_slug()
+    args = ["api", "-X", "PATCH"]
+    if title is not None:
+        args.extend(["-f", f"title={title}"])
+    if body is not None:
+        args.extend(["-f", f"body={body}"])
+    if state is not None:
+        args.extend(["-f", f"state={state}"])
+    args.append(f"repos/{slug}/issues/{issue_num}")
+    try:
+        raw = run_gh(args, timeout=20, retries=2)
+        invalidate_caches()
+        return json.loads(raw)
+    except Exception as e:
+        return {"error": gh_error(e)}
+
+
+def close_issue(issue_num: int):
+    return update_issue(issue_num, state="closed")
+
+
 def fetch_pr_diff(pr_num: int):
     slug = github_repo_slug()
     path = f"repos/{slug}/pulls/{pr_num}"
@@ -1033,6 +1109,15 @@ def merge_pr(pr_num: int, strategy: str = "squash"):
             return {"error": (result.stderr or result.stdout or "merge failed").strip()}
     except Exception as e:
         return {"error": f"merge failed: {e}"}
+    # Pull the merged main into local so the repo is up-to-date.
+    subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "fetch", "origin", "main"],
+        capture_output=True, timeout=30,
+    )
+    subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "merge", "--ff-only", "origin/main"],
+        capture_output=True, timeout=30,
+    )
     invalidate_caches()
     return {"merged": True, "pr": pr_num, "strategy": strategy, "output": result.stdout.strip()}
 
@@ -1184,5 +1269,3 @@ def prepare_ci_fix(pr_num: int):
         "failing_checks": meta.get("failing_checks") or [],
         "pending_checks": meta.get("pending_checks") or [],
     }
-
-

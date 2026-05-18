@@ -13,6 +13,13 @@ header button{background:#1f6feb;color:#fff;border:1px solid #1f6feb;border-radi
 header button:hover{background:#2f7fff;}
 main{display:grid;grid-template-columns:340px 1fr;height:calc(100vh - 50px);}
 aside{border-right:1px solid #30363d;overflow-y:auto;background:#0d1117;}
+aside .sidebar-tabs{position:sticky;top:0;z-index:20;display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px;background:#0d1117;border-bottom:1px solid #21262d;}
+aside .sidebar-tabs button{background:#0d1117;color:#8b949e;border:1px solid #30363d;border-radius:999px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit;}
+aside .sidebar-tabs button:hover{color:#c9d1d9;border-color:#58a6ff;}
+aside .sidebar-tabs button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+aside .sidebar-tabs .count{color:inherit;font-size:10px;opacity:0.85;margin-left:4px;}
+aside .sidebar-panel{display:none;}
+aside .sidebar-panel.active{display:block;}
 aside h2{font-size:11px;text-transform:uppercase;color:#8b949e;letter-spacing:0.08em;margin:14px 18px 6px;display:flex;justify-content:space-between;align-items:center;}
 aside h2 .count{color:#6e7681;font-weight:normal;text-transform:none;letter-spacing:0;}
 aside .file{padding:6px 18px;cursor:pointer;border-left:3px solid transparent;font-size:13px;}
@@ -25,8 +32,31 @@ section h2 .ctl{font-size:11px;color:#8b949e;font-weight:400;}
 section h2 button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:3px 8px;cursor:pointer;font-size:11px;margin-left:6px;}
 section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 #term-wrap{flex:1;padding:8px;overflow:hidden;background:#000;}
+#terminal-root{height:100%;}
+#issue-pane{display:none;height:100%;overflow-y:auto;padding:20px;background:#0d1117;color:#c9d1d9;}
+section.issue-view #terminal-root{display:none;}
+section.issue-view #issue-pane{display:block;}
+section.issue-view #tab-bar,
+section.issue-view #pr-bar,
+section.issue-view .ctl{display:none;}
 .xterm{height:100%;}
 #hint{padding:40px;color:#6e7681;text-align:center;background:#000;}
+.issue-read{max-width:900px;margin:0 auto;}
+.issue-read .topline{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px;}
+.issue-read .title-block{min-width:0;}
+.issue-read .num{color:#8b949e;font-size:12px;margin-bottom:4px;}
+.issue-read .title{color:#f0f6fc;font-size:18px;line-height:1.35;font-weight:600;word-break:break-word;}
+.issue-read .title-input{width:100%;box-sizing:border-box;background:#161b22;color:#f0f6fc;border:1px solid #30363d;border-radius:6px;padding:8px 10px;font:inherit;font-size:16px;line-height:1.35;font-weight:600;outline:none;}
+.issue-read .title-input:focus,.issue-read .body-input:focus{border-color:#58a6ff;box-shadow:0 0 0 1px rgba(88,166,255,0.25);}
+.issue-read .meta{font-size:11px;color:#6e7681;margin:8px 0 12px;}
+.issue-read .lbls{font-size:10px;color:#6e7681;margin-bottom:10px;}
+.issue-read .lbls .lbl{display:inline-block;background:#161b22;padding:1px 6px;border-radius:8px;margin-right:4px;color:#8b949e;}
+.issue-read .body-input{width:100%;min-height:320px;box-sizing:border-box;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:8px;padding:12px;font:inherit;font-size:13px;line-height:1.6;resize:vertical;outline:none;}
+.issue-read .preview{margin-top:12px;padding:16px 18px;background:#0d1117;border:1px solid #21262d;border-radius:8px;font-size:13px;line-height:1.65;}
+.issue-read .preview .preview-label{color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;}
+.issue-read .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+.issue-read .actions button,.issue-read .actions a{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;}
+.issue-read .actions button:hover,.issue-read .actions a:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .empty{padding:40px 18px;color:#6e7681;text-align:center;}
 .worktree{padding:8px 18px;font-size:12px;border-bottom:1px solid #21262d;}
 .worktree .name{color:#58a6ff;}
@@ -39,6 +69,11 @@ section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .pty:hover{background:#161b22;}
 .pty.active{background:#161b22;border-left-color:#3fb950;}
 .pty .meta{font-size:10px;color:#6e7681;margin-top:2px;word-break:break-all;}
+.pty .actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+.pty button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:inherit;}
+.pty button:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+.pty button.delete{padding:2px 6px;background:#2a1717;border-color:#5a1e1e;color:#ff7b72;border-radius:3px;}
+.pty button.delete:hover{background:#4a0e0e;color:#fff;border-color:#7d2222;}
 .filters{padding:0 18px 8px;display:flex;gap:4px;flex-wrap:wrap;}
 .filters button{background:#0d1117;color:#8b949e;border:1px solid #30363d;border-radius:12px;padding:3px 10px;cursor:pointer;font-size:11px;font-family:inherit;}
 .filters button:hover{color:#c9d1d9;}
@@ -76,13 +111,14 @@ section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .issue .body a{color:#58a6ff;}
 .issue .body-loading,.issue .body-err{color:#6e7681;font-style:italic;padding:4px 0;}
 .issue .body-err{color:#ff7b72;}
-.issue.busy{background:#1c1a0d;}
+.issue.busy{background:#2a1f0e;}
 .issue.busy .ttl::before{content:"⏳ ";color:#d29922;}
 .issue.parked .ttl{color:#6e7681;}
 .issue .lbls,.pr .lbls{font-size:10px;color:#6e7681;margin-bottom:6px;}
 .issue .lbls .lbl,.pr .lbls .lbl{display:inline-block;background:#161b22;padding:1px 6px;border-radius:8px;margin-right:3px;color:#8b949e;}
 .issue .lbls .lbl.claim-next{background:#0e3a1a;color:#3fb950;}
 .issue .lbls .lbl.in-progress{background:#3a2f0e;color:#d29922;}
+.issue .lbls .lbl.claimed{background:#13321f;color:#3fb950;}
 .issue .lbls .lbl.needs-validation{background:#222;color:#6e7681;}
 .issue .lbls .lbl.keystone{background:#4a0f2a;color:#f778ba;}
 .issue .row,.pr .row{display:flex;gap:6px;flex-wrap:wrap;}
@@ -90,6 +126,29 @@ section h2 button.on{background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .issue button:hover:not(:disabled),.pr button:hover:not(:disabled){background:#1f6feb;color:#fff;border-color:#1f6feb;}
 .issue button:disabled,.pr button:disabled{opacity:0.4;cursor:not-allowed;}
 .issue button.headless{background:#0d1117;}
+.issue.claimed{box-shadow:inset 3px 0 0 #3fb950;}
+.issue.claimed .ttl .title-text{color:#f0f6fc;}
+/* Read modal */
+#modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:200;display:none;align-items:center;justify-content:center;}
+#modal-backdrop.show{display:flex;}
+#modal-panel{background:#0d1117;border:1px solid #30363d;border-radius:8px;width:680px;max-width:90vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.6);}
+#modal-header{display:flex;align-items:baseline;gap:10px;padding:14px 18px;border-bottom:1px solid #30363d;flex-shrink:0;}
+#modal-header .num{color:#8b949e;font-size:12px;}
+#modal-header .title-text{flex:1;color:#f0f6fc;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#modal-header .close-btn{background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px;font-family:inherit;}
+#modal-header .close-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
+#modal-body{flex:1;overflow-y:auto;padding:18px;font-size:12px;color:#c9d1d9;line-height:1.6;}
+#modal-body pre{background:#161b22;padding:6px 8px;border-radius:3px;overflow-x:auto;font-size:11px;margin:4px 0;}
+#modal-body code{background:#161b22;padding:0 4px;border-radius:2px;font-size:11px;}
+#modal-body pre code{background:transparent;padding:0;}
+#modal-body b{color:#58a6ff;display:block;margin-top:8px;}
+#modal-body b:first-child{margin-top:0;}
+#modal-body a{color:#58a6ff;}
+#modal-footer{padding:10px 18px;border-top:1px solid #30363d;display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;}
+#modal-footer button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit;}
+#modal-footer button:hover{background:#1f6feb;color:#fff;border-color:#1f6feb;}
+#modal-footer a{color:#58a6ff;text-decoration:none;font-size:11px;padding:4px 0;}
+#modal-footer a:hover{text-decoration:underline;}
 .pr .badges{font-size:10px;color:#6e7681;margin-bottom:6px;}
 .pr .badges .b{display:inline-block;padding:1px 6px;border-radius:3px;margin-right:4px;background:#161b22;}
 .pr .badges .b.draft{color:#8b949e;}
@@ -156,38 +215,73 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
 </header>
 <main>
   <aside>
-    <h2>Issues <span class="count" id="issueCount"></span>
-      <button class="hdr-btn" onclick="proposeIssue()" title="Open the selected agent interactively and draft a new issue body (scenario, demo, acceptance, anti-features, files). When the agent exits, the shell stays open with a ready-to-run gh issue create command.">📝 propose</button>
-      <button class="hdr-btn" onclick="batchClaimNext()" title="Launch the next few claim-next issues as issue shells, one after another, so you can fan out work fast.">↧ batch</button>
-    </h2>
-    <div class="filters" id="filters">
-      <button data-f="all" class="on" title="All open issues, including validated, in-progress, and parked ones.">all</button>
-      <button data-f="claim-next" title="Issues open for an agent to grab. The orchestrator picks the lowest-numbered one by default.">claim-next</button>
-      <button data-f="good first issue" title="Triaged as approachable for a new contributor or new agent.">good first</button>
-      <button data-f="agent-friendly" title="Self-contained scope that fits the agent contract (single file, demo, anti-features).">agent</button>
-      <button data-f="needs-validation" title="Speculative — waiting on a real user to confirm before opening for agents.">parked</button>
+    <div class="sidebar-tabs" id="sidebarTabs">
+      <button data-sidebar-tab="issues" class="on">Issues <span class="count" id="tabCountIssues"></span></button>
+      <button data-sidebar-tab="prs">PRs <span class="count" id="tabCountPRs"></span></button>
+      <button data-sidebar-tab="terminals">Terminals <span class="count" id="tabCountTerminals"></span></button>
+      <button data-sidebar-tab="worktrees">Worktrees <span class="count" id="tabCountWorktrees"></span></button>
+      <button data-sidebar-tab="state">State <span class="count" id="tabCountState"></span></button>
+      <button data-sidebar-tab="activity">Activity <span class="count" id="tabCountActivity"></span></button>
     </div>
-    <div id="issues"><div class="empty">loading…</div></div>
-    <h2>Open PRs <span class="count" id="prCount"></span></h2>
-    <div id="prs"><div class="empty">loading…</div></div>
-    <h2>Needs me <span class="count" id="needsCount"></span></h2>
-    <div id="needsme"><div class="empty">waiting for an idle agent session…</div></div>
-    <h2>Live terminals</h2>
-    <div id="ptys"><div class="empty">no terminals · click + new shell</div></div>
-    <h2>Active worktrees <span class="count" id="worktreeCount"></span>
-      <button class="hdr-btn" onclick="pruneMergedWorktrees()" title="Remove any clean merged worktrees while keeping the branches for later restoration.">🧹 prune merged</button>
-    </h2>
-    <div id="worktrees"><div class="empty">none</div></div>
-    <h2>Activity <span class="count" id="activityCount"></span></h2>
-    <div id="activity"><div class="empty">nothing recent yet</div></div>
-    <h2>State files
-      <button class="hdr-btn" onclick="cleanupState(true)" title="Dry-run: list state files older than 7 days that the cleanup would remove. Nothing is deleted.">🧹 audit</button>
-      <button class="hdr-btn" onclick="cleanupState(false)" title="Delete state files older than 7 days (implementer/orchestrator logs, prompts, diffs, drafts). Worktrees and the .gitignore are never touched.">🧹 prune</button>
-    </h2>
-    <div id="files"><div class="empty">scanning…</div></div>
+    <div class="sidebar-panel active" data-sidebar-panel="issues">
+      <h2>Issues <span class="count" id="issueCount"></span>
+        <button class="hdr-btn" onclick="proposeIssue()" title="Open the selected agent interactively and draft a new issue body (scenario, demo, acceptance, anti-features, files). When the agent exits, the shell stays open with a ready-to-run gh issue create command.">📝 propose</button>
+        <button class="hdr-btn" onclick="batchClaimNext()" title="Launch the next few claim-next issues as issue shells, one after another, so you can fan out work fast.">↧ batch</button>
+      </h2>
+      <div class="filters" id="filters">
+        <button data-f="all" class="on" title="All open issues, including validated, in-progress, and parked ones.">all</button>
+        <button data-f="claim-next" title="Issues open for an agent to grab. The orchestrator picks the lowest-numbered one by default.">claim-next</button>
+        <button data-f="good first issue" title="Triaged as approachable for a new contributor or new agent.">good first</button>
+        <button data-f="agent-friendly" title="Self-contained scope that fits the agent contract (single file, demo, anti-features).">agent</button>
+        <button data-f="needs-validation" title="Speculative — waiting on a real user to confirm before opening for agents.">parked</button>
+      </div>
+      <div id="issues"><div class="empty">loading…</div></div>
+    </div>
+    <div class="sidebar-panel" data-sidebar-panel="prs">
+      <h2>Open PRs <span class="count" id="prCount"></span></h2>
+      <div id="prs"><div class="empty">loading…</div></div>
+    </div>
+    <div class="sidebar-panel" data-sidebar-panel="terminals">
+      <h2>Needs me <span class="count" id="needsCount"></span></h2>
+      <div id="needsme"><div class="empty">waiting for an idle agent session…</div></div>
+      <h2>Live terminals <span class="count" id="ptyCount"></span></h2>
+      <div id="ptys"><div class="empty">no terminals · click + new shell</div></div>
+    </div>
+    <div class="sidebar-panel" data-sidebar-panel="worktrees">
+      <h2>Active worktrees <span class="count" id="worktreeCount"></span>
+        <button class="hdr-btn" onclick="pruneMergedWorktrees()" title="Remove any clean merged worktrees while keeping the branches for later restoration.">🧹 prune merged</button>
+      </h2>
+      <div id="worktrees"><div class="empty">none</div></div>
+    </div>
+    <div class="sidebar-panel" data-sidebar-panel="activity">
+      <h2>Activity <span class="count" id="activityCount"></span></h2>
+      <div id="activity"><div class="empty">nothing recent yet</div></div>
+    </div>
+    <div class="sidebar-panel" data-sidebar-panel="state">
+      <h2>State files
+        <span class="count" id="fileCount"></span>
+        <button class="hdr-btn" onclick="cleanupState(true)" title="Dry-run: list state files older than 7 days that the cleanup would remove. Nothing is deleted.">🧹 audit</button>
+        <button class="hdr-btn" onclick="cleanupState(false)" title="Delete state files older than 7 days (implementer/orchestrator logs, prompts, diffs, drafts). Worktrees and the .gitignore are never touched.">🧹 prune</button>
+      </h2>
+      <div id="files"><div class="empty">scanning…</div></div>
+    </div>
   </aside>
   <div id="toast"></div>
   <div id="tip"></div>
+  <div id="modal-backdrop" onclick="if(event.target===this)closeModal()">
+    <div id="modal-panel" role="dialog" aria-modal="true">
+      <div id="modal-header">
+        <span class="num" id="modal-num"></span>
+        <span class="title-text" id="modal-title"></span>
+        <button class="close-btn" onclick="closeModal()" title="Close (Esc)">✕</button>
+      </div>
+      <div id="modal-body"></div>
+      <div id="modal-footer">
+        <button onclick="closeModal()">close</button>
+        <a id="modal-gh-link" href="#" target="_blank">open on GitHub ↗</a>
+      </div>
+    </div>
+  </div>
   <section>
     <div id="tab-bar"></div>
     <h2><span id="title">pick a file or open a shell →</span>
@@ -199,7 +293,7 @@ aside h2 .hdr-btn:hover{color:#c9d1d9;border-color:#58a6ff;}
       </span>
     </h2>
     <div id="pr-bar"></div>
-    <div id="term-wrap"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div>
+    <div id="term-wrap"><div id="terminal-root"><div id="hint">Pick an <b>agent</b> in the header (codex / claude / minimax) — it routes the buttons below.<br>🖥️ <b>⚑ claim</b> next to an issue: preps a fresh worktree and launches the agent interactively with the issue's prompt loaded.<br>🔍 <b>review</b> next to a PR: same interactive mode, with the PR diff + linked issue body pre-loaded as the review prompt. Verdict auto-posts to the PR when the agent exits.<br>🟢 <b>merge</b> next to a PR: opens an agent session that runs <code>gh pr merge --squash --delete-branch</code> and handles conflicts.<br>🩹 <b>fix CI</b> next to a PR: opens an agent session inside the PR worktree to address failing checks.<br>📝 <b>propose</b> in the Issues header: drafts a new issue body interactively.<br>💬 <b>new agent</b> in header: free-form agent REPL in the repo root, no prompt.<br>💻 <b>+ new shell</b> in header: plain bash in the repo root.<br>📁 Click any state file on the left to tail an agent's log.<br>🧹 <b>State files</b> header: <i>audit</i> shows what's old, <i>prune</i> deletes it.</div></div><div id="issue-pane"></div></div>
   </section>
 </main>
 <script>
@@ -224,7 +318,7 @@ let termAttached = false;
 let inputHandler = null;
 function attachTerm() {
   if (termAttached) return;
-  const wrap = document.getElementById('term-wrap');
+  const wrap = document.getElementById('terminal-root');
   wrap.innerHTML = '';
   term.open(wrap);
   fitAddon.fit();
@@ -246,6 +340,221 @@ let allPtys = [];
 let allWorktrees = [];
 let allPRs = [];
 let idleState = new Map();   // sid -> {lastOutput, notified}
+let liveIssueSessions = new Map(); // issue number string -> pty session
+let lastNonIssueView = null;
+const SIDEBAR_TABS = ['issues', 'prs', 'terminals', 'worktrees', 'activity', 'state'];
+let activeSidebarTab = localStorage.getItem('gitswarm.sidebarTab') || 'issues';
+
+function showSidebarTab(name) {
+  const next = SIDEBAR_TABS.includes(name) ? name : 'issues';
+  activeSidebarTab = next;
+  localStorage.setItem('gitswarm.sidebarTab', next);
+  document.querySelectorAll('[data-sidebar-tab]').forEach(btn => btn.classList.toggle('on', btn.dataset.sidebarTab === next));
+  document.querySelectorAll('[data-sidebar-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.sidebarPanel === next));
+  const aside = document.querySelector('aside');
+  if (aside) aside.scrollTop = 0;
+}
+
+function issueSessionFor(num) {
+  return liveIssueSessions.get(String(num)) || liveIssueSessions.get(Number(num)) || null;
+}
+
+function syncIssueClaimState() {
+  const rows = document.querySelectorAll('#issues .issue');
+  rows.forEach(row => {
+    const num = row.dataset.num;
+    const it = allIssues.find(x => String(x.number) === String(num));
+    if (!it) return;
+    const live = issueSessionFor(num);
+    const claimed = !!live || !!it.in_progress;
+    row.classList.toggle('busy', claimed);
+    row.classList.toggle('claimed', claimed);
+    const btn = row.querySelector('[data-action="issue-claim"]');
+    if (!btn) return;
+    if (live) {
+      btn.textContent = '🖥️ open terminal';
+      btn.disabled = false;
+      btn.title = `Open the live terminal for issue #${num}`;
+      btn.dataset.sid = live.sid;
+      btn.dataset.label = live.label || `#${num}`;
+      btn.dataset.mode = 'open';
+    } else if (it.in_progress) {
+      btn.textContent = 'claimed';
+      btn.disabled = true;
+      btn.title = `Issue #${num} is already claimed`;
+      delete btn.dataset.sid;
+      delete btn.dataset.label;
+      btn.dataset.mode = 'claimed';
+    } else {
+      btn.textContent = '⚑ claim';
+      btn.disabled = false;
+      btn.title = 'Claim the issue, prep a fresh worktree, and run the selected agent interactively with the issue prompt loaded';
+      delete btn.dataset.sid;
+      delete btn.dataset.label;
+      btn.dataset.mode = 'claim';
+    }
+    let labels = row.querySelector('.lbls');
+    if (!labels) {
+      const rowEl = row.querySelector('.row');
+      if (!rowEl) return;
+      labels = document.createElement('div');
+      labels.className = 'lbls';
+      rowEl.parentNode.insertBefore(labels, rowEl);
+    }
+    let claimedChip = labels.querySelector('.lbl.claimed');
+    if (live && !claimedChip) {
+      claimedChip = document.createElement('span');
+      claimedChip.className = 'lbl claimed';
+      claimedChip.textContent = 'claimed';
+      labels.insertBefore(claimedChip, labels.firstChild);
+    } else if (!live && claimedChip && !it.in_progress) {
+      claimedChip.remove();
+    }
+  });
+}
+
+function issueTerminalTitle(num, label) {
+  return label || `#${num}`;
+}
+
+function showMainPane(mode) {
+  const section = document.querySelector('section');
+  if (section) section.classList.toggle('issue-view', mode === 'issue');
+}
+
+function renderIssueMain(num) {
+  const issue = allIssues.find(i => i && String(i.number) === String(num));
+  if (!issue) return;
+  const pane = document.getElementById('issue-pane');
+  const renderBody = (body) => {
+    const labels = (issue.labels || []).map(l => `<span class="lbl ${l.replace(/[^a-z0-9-]/g,'-')}">${escapeHtml(l)}</span>`).join('');
+    const metaBits = [];
+    if (issue.author) metaBits.push(`by ${issue.author}`);
+    if (issue.assignees && issue.assignees.length) metaBits.push(`assignee ${issue.assignees.join(', ')}`);
+    if (issue.updatedAt) metaBits.push(`updated ${fmtAgo(issue.updatedAt)} ago`);
+    if (issue.comment_count != null) metaBits.push(`${issue.comment_count} comment${issue.comment_count === 1 ? '' : 's'}`);
+    pane.innerHTML = `
+      <div class="issue-read">
+        <div class="topline">
+          <div class="title-block">
+            <div class="num">#${issue.number}</div>
+            <input id="issue-edit-title" class="title-input" value="${escapeHtml(issue.title || '')}" />
+            ${labels ? `<div class="lbls">${labels}</div>` : ''}
+            ${metaBits.length ? `<div class="meta">${escapeHtml(metaBits.join(' · '))}</div>` : ''}
+          </div>
+          <div class="actions">
+            <button onclick="saveIssueEdits(${issue.number})" title="Save the title and body back to GitHub">save</button>
+            <button onclick="deleteIssueFromUI(${issue.number})" title="Close this issue on GitHub">delete</button>
+            <button onclick="closeIssueView()" title="Go back to the previous terminal or reset to the default pane">close</button>
+            <a href="${escapeHtml(issue.url || '#')}" target="_blank" title="Open issue on GitHub">↗ GitHub</a>
+          </div>
+        </div>
+        <textarea id="issue-edit-body" class="body-input">${escapeHtml(body || '_(empty body)_')}</textarea>
+        <div class="preview"><div class="preview-label">Preview</div>${renderIssueBody(body || '_(empty body)_')}</div>
+      </div>
+    `;
+  };
+  const cached = _issueBodyCache.get(String(num));
+  if (cached) {
+    renderBody(cached);
+    return;
+  }
+  pane.innerHTML = '<div class="empty">loading issue…</div>';
+  fetch('/api/issue?num=' + num)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { pane.innerHTML = '<div class="body-err">' + escapeHtml(d.error) + '</div>'; return; }
+      const body = d.body || '_(empty body)_';
+      _issueBodyCache.set(String(num), body);
+      renderBody(body);
+    })
+    .catch(err => { pane.innerHTML = '<div class="body-err">fetch failed: ' + escapeHtml(String(err)) + '</div>'; });
+}
+
+async function saveIssueEdits(num) {
+  const titleEl = document.getElementById('issue-edit-title');
+  const bodyEl = document.getElementById('issue-edit-body');
+  if (!titleEl || !bodyEl) return;
+  const title = titleEl.value.trim();
+  const body = bodyEl.value;
+  if (!title) { showToast('title cannot be empty', 'err'); return; }
+  showToast(`saving issue #${num}…`, '');
+  try {
+    const r = await fetch('/api/issue/update', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({issue: num, title, body})
+    });
+    const data = await r.json();
+    if (data.error) { showToast(`save failed: ${data.error}`, 'err'); return; }
+    _issueBodyCache.set(String(num), body);
+    showToast(`saved issue #${num}`, 'ok');
+    await listIssues();
+    renderIssueMain(num);
+  } catch (err) {
+    showToast(`save failed: ${err}`, 'err');
+  }
+}
+
+async function deleteIssueFromUI(num) {
+  if (!confirm(`Close issue #${num} on GitHub?`)) return;
+  showToast(`closing issue #${num}…`, '');
+  try {
+    const r = await fetch('/api/issue/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({issue: num})
+    });
+    const data = await r.json();
+    if (data.error) { showToast(`delete failed: ${data.error}`, 'err'); return; }
+    showToast(`closed issue #${num}`, 'ok');
+    await listIssues();
+    closeIssueView();
+  } catch (err) {
+    showToast(`delete failed: ${err}`, 'err');
+  }
+}
+
+function openIssueInMain(num) {
+  const issue = allIssues.find(i => i && String(i.number) === String(num));
+  if (!issue) return;
+  if (view && view.kind !== 'issue') lastNonIssueView = {...view};
+  stopStreams();
+  view = {kind: 'issue', num: String(num), label: issue.title || `#${num}`};
+  inputHandler = null;
+  document.getElementById('title').textContent = `📖 #${num} ${issue.title || ''}`.trim();
+  document.querySelectorAll('aside .file').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('aside .pty').forEach(el => el.classList.remove('active'));
+  document.getElementById('pr-bar').className = '';
+  showMainPane('issue');
+  renderTabBar();
+  document.getElementById('issue-pane').scrollTop = 0;
+  renderIssueMain(num);
+}
+
+function closeIssueView() {
+  if (lastNonIssueView && lastNonIssueView.kind === 'pty') {
+    selectPty(lastNonIssueView.sid, lastNonIssueView.label);
+    return;
+  }
+  if (lastNonIssueView && lastNonIssueView.kind === 'file') {
+    selectFile(lastNonIssueView.name);
+    return;
+  }
+  stopStreams();
+  view = null;
+  inputHandler = null;
+  document.getElementById('title').textContent = 'pick a file or open a shell →';
+  document.getElementById('pr-bar').className = '';
+  showMainPane('terminal');
+  renderTabBar();
+}
+
+document.getElementById('sidebarTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-sidebar-tab]');
+  if (!btn) return;
+  showSidebarTab(btn.dataset.sidebarTab);
+});
 
 function sendResize() {
   if (!view || view.kind !== 'pty' || !termAttached) return;
@@ -284,6 +593,11 @@ async function listFiles() {
         return `<div class="${cls}" data-name="${f.name}" title="Tail this log file (${fmtSize(f.size)}). Read-only — keystrokes are dropped." onclick="selectFile('${safeName}')">${f.name}<span class="meta">${fmtSize(f.size)} · ${fmtTime(f.mtime)}</span></div>`;
       }).join('');
     }
+    const fileCount = data.files.length;
+    const fileCountEl = document.getElementById('fileCount');
+    if (fileCountEl) fileCountEl.textContent = String(fileCount);
+    const tabFileCount = document.getElementById('tabCountState');
+    if (tabFileCount) tabFileCount.textContent = String(fileCount);
     document.getElementById('lastUpdate').textContent = 'updated ' + new Date().toLocaleTimeString();
   } catch(e) { console.error(e); }
 }
@@ -296,6 +610,8 @@ async function listWorktrees() {
     allWorktrees = data.worktrees || [];
     const mergeCandidates = allWorktrees.filter(w => w.status === 'merge candidate').length;
     document.getElementById('worktreeCount').textContent = `${mergeCandidates} merge candidate${mergeCandidates === 1 ? '' : 's'}`;
+    const tabCountEl = document.getElementById('tabCountWorktrees');
+    if (tabCountEl) tabCountEl.textContent = String(allWorktrees.length);
     const runningSet = new Set((data.running || []).filter(r => r.active).map(r => r.worktree));
     if (!allWorktrees.length) { el.innerHTML = '<div class="empty">none</div>'; }
     else {
@@ -347,6 +663,8 @@ async function listIssues() {
     }
     const claimable = allIssues.filter(it => it.labels && it.labels.includes('claim-next')).length;
     document.getElementById('issueCount').textContent = `${allIssues.length} open · ${claimable} claim-next`;
+    const tabCountEl = document.getElementById('tabCountIssues');
+    if (tabCountEl) tabCountEl.textContent = String(allIssues.length);
     renderIssues();
     renderActivity();
   } catch(e) { console.error(e); }
@@ -359,8 +677,12 @@ function renderIssues() {
     : allIssues.filter(it => it.labels.includes(issueFilter));
   if (!filtered.length) { el.innerHTML = `<div class="empty">no issues match "${issueFilter}"</div>`; return; }
   el.innerHTML = filtered.map(it => {
+    const live = issueSessionFor(it.number);
+    const claimed = !!live || !!it.in_progress;
+    const locked = claimed;
     const interesting = it.labels.filter(l => ['claim-next','in-progress','needs-validation','keystone','good first issue','agent-friendly'].includes(l));
     const labelChips = interesting.map(l => `<span class="lbl ${l.replace(/[^a-z0-9-]/g,'-')}">${l}</span>`).join('');
+    const claimedChip = live && !it.in_progress ? '<span class="lbl claimed">claimed</span>' : '';
     const suggested = (it.suggested_labels || []).filter(l => !it.labels.includes(l));
     const suggestedChips = suggested.length ? `<span class="suggested">suggested ${suggested.map(l => `<span class="lbl">${l}</span>`).join('')}</span>` : '';
     const metaBits = [];
@@ -370,8 +692,13 @@ function renderIssues() {
     if (it.comment_count != null) metaBits.push(`${it.comment_count} comment${it.comment_count === 1 ? '' : 's'}`);
     const summary = escapeHtml(it.summary || 'no body yet');
     const tooltip = escapeHtml(`${it.title}\n${it.summary || ''}`.trim());
+    const claimButton = live
+      ? `<button data-action="issue-claim" data-sid="${escapeHtml(live.sid)}" data-label="${escapeHtml(issueTerminalTitle(it.number, live.label))}" title="Open the live terminal for issue #${it.number}">🖥️ open terminal</button>`
+      : it.in_progress
+      ? `<button data-action="issue-claim" disabled title="Issue #${it.number} is already claimed">claimed</button>`
+      : `<button data-action="issue-claim" title="Claim the issue, prep a fresh worktree, and run the selected agent interactively with the issue prompt loaded">⚑ claim</button>`;
     return `
-      <div class="issue ${it.in_progress ? 'busy' : ''} ${it.parked ? 'parked' : ''}" data-num="${it.number}">
+      <div class="issue ${claimed ? 'busy claimed' : ''} ${it.parked ? 'parked' : ''}" data-num="${it.number}">
         <div class="ttl">
           <span class="caret" data-action="toggle" title="Show issue body (Researcher / Demo / Acceptance / Anti-features / Files)">▸</span>
           <span class="num">#${it.number}</span>
@@ -380,22 +707,38 @@ function renderIssues() {
         </div>
         <div class="summary">${summary}</div>
         ${metaBits.length ? `<div class="meta">${escapeHtml(metaBits.join(' · '))}</div>` : ''}
-        ${labelChips ? `<div class="lbls">${labelChips}</div>` : ''}
+        ${(claimedChip || labelChips) ? `<div class="lbls">${claimedChip}${labelChips}</div>` : ''}
         ${suggestedChips ? `<div class="suggested">${suggestedChips}</div>` : ''}
         <div class="body" id="ibody-${it.number}"></div>
         <div class="row">
-          <button onclick="launchIssueShell(${it.number})" title="Claim the issue, prep a fresh worktree, and run the selected agent interactively with the issue prompt loaded">⚑ claim</button>
+          ${claimButton}
+          <button onclick="openIssueInMain(${it.number})" title="Open full issue body in the main pane">📖 read</button>
           <button onclick="window.open('${it.url}', '_blank')" title="Open issue on GitHub">↗ GitHub</button>
-          <button onclick="launchIssue(${it.number}, 'watch')" ${it.in_progress ? 'disabled' : ''} title="Spawn orchestrator (headless codex exec); auto-switch terminal to log">▶ watch</button>
-          <button class="headless" onclick="launchIssue(${it.number}, 'headless')" ${it.in_progress ? 'disabled' : ''} title="Spawn orchestrator in background; don't switch view">⌁ bg</button>
+          <button onclick="launchIssue(${it.number}, 'watch')" ${locked ? 'disabled' : ''} title="Spawn orchestrator (headless codex exec); auto-switch terminal to log">▶ watch</button>
+          <button class="headless" onclick="launchIssue(${it.number}, 'headless')" ${locked ? 'disabled' : ''} title="Spawn orchestrator in background; don't switch view">⌁ bg</button>
         </div>
       </div>
     `;
   }).join('');
 }
 
-// Event delegation for issue caret clicks — toggles the body panel.
+// Event delegation for issue rows: claim/open buttons keep their behavior,
+// caret still toggles inline body, and clicking the row itself opens the
+// issue in the main read pane.
 document.getElementById('issues').addEventListener('click', async (e) => {
+  const claimBtn = e.target.closest('[data-action="issue-claim"]');
+  if (claimBtn) {
+    const row = claimBtn.closest('.issue');
+    if (!row) return;
+    const num = parseInt(row.dataset.num, 10);
+    if (claimBtn.disabled) return;
+    if (claimBtn.dataset.mode === 'open' && claimBtn.dataset.sid) {
+      selectPty(claimBtn.dataset.sid, claimBtn.dataset.label || `#${num}`);
+      return;
+    }
+    await launchIssueShell(num);
+    return;
+  }
   const c = e.target.closest('.caret');
   if (!c) return;
   const row = c.closest('.issue');
@@ -419,6 +762,14 @@ document.getElementById('issues').addEventListener('click', async (e) => {
   } catch(err) {
     body.innerHTML = `<div class="body-err">fetch failed: ${escapeHtml(String(err))}</div>`;
   }
+  return;
+});
+
+document.getElementById('issues').addEventListener('click', (e) => {
+  if (e.target.closest('[data-action="issue-claim"], .caret, button, a')) return;
+  const row = e.target.closest('.issue');
+  if (!row) return;
+  openIssueInMain(parseInt(row.dataset.num, 10));
 });
 
 // Tiny markdown — only what we need for issue bodies: headings, code blocks,
@@ -463,6 +814,8 @@ async function listPRs() {
     });
     const readyCount = allPRs.filter(pr => pr.mergeable === 'MERGEABLE' && !pr.isDraft && pr.ci === 'pass' && pr.reviewDecision !== 'CHANGES_REQUESTED').length;
     document.getElementById('prCount').textContent = `${allPRs.length} open · ${readyCount} ready`;
+    const tabCountEl = document.getElementById('tabCountPRs');
+    if (tabCountEl) tabCountEl.textContent = String(allPRs.length);
     if (!allPRs.length) { el.innerHTML = '<div class="empty">no open PRs</div>'; renderActivity(); return; }
     el.innerHTML = allPRs.map(pr => {
       const decision = pr.reviewDecision || '';
@@ -726,6 +1079,7 @@ function selectFile(name) {
   replayMode = false;
   inputHandler = null;        // read-only — drop keystrokes
   document.getElementById('title').textContent = '📄 ' + name;
+  showMainPane('terminal');
   document.querySelectorAll('aside .file').forEach(el => el.classList.toggle('active', el.dataset.name === name));
   document.querySelectorAll('aside .pty').forEach(el => el.classList.remove('active'));
   document.getElementById('pr-bar').className = '';
@@ -747,6 +1101,7 @@ function selectPty(sid, label) {
       body: JSON.stringify({sid, data})}).catch(()=>{});
   };
   document.getElementById('title').textContent = '💻 ' + (label || sid);
+  showMainPane('terminal');
   document.querySelectorAll('aside .file').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('aside .pty').forEach(el => el.classList.toggle('active', el.dataset.sid === sid));
   renderPRBar(sid);
@@ -867,12 +1222,21 @@ async function listPtys() {
     const el = document.getElementById('ptys');
     const sessions = data.sessions || [];
     allPtys = sessions;
+    const ptyCountEl = document.getElementById('ptyCount');
+    if (ptyCountEl) ptyCountEl.textContent = String(sessions.length);
+    const tabCountEl = document.getElementById('tabCountTerminals');
+    if (tabCountEl) tabCountEl.textContent = String(sessions.length);
+    const nextLiveIssueSessions = new Map();
     // Detect alive→dead transitions and fire notifications, then refresh PRs
     // so the reviewed badge appears if the session just posted a verdict.
     let didTransition = false;
     let idleCount = 0;
     const now = Date.now();
     for (const s of sessions) {
+      const issueNum = s.issue != null
+        ? String(s.issue)
+        : (s.kind === 'issue' ? ((s.label || '').match(/#(\d+)/)?.[1] || '') : '');
+      if (s.alive && issueNum) nextLiveIssueSessions.set(String(issueNum), s);
       const prev = _prevPtyAlive.get(s.sid);
       if (prev === true && !s.alive) {
         didTransition = true;
@@ -924,8 +1288,11 @@ async function listPtys() {
       const tip = s.alive
         ? `Attach the terminal pane to this live session. PID running in ${cwd}.`
         : `Session ended. Click to view its scrollback (no new input possible).`;
-      return `<div class="${cls}" data-sid="${escapeHtml(s.sid)}" data-label="${escapeHtml(label)}" title="${escapeHtml(tip)}">${dot} ${escapeHtml(label)}<div class="meta">${escapeHtml(cwd)}</div></div>`;
+      const deleteBtn = `<button class="delete" data-action="pty-delete" data-sid="${escapeHtml(s.sid)}" data-label="${escapeHtml(label)}" data-alive="${s.alive}" title="${s.alive ? 'Kill and remove this terminal session' : 'Remove this dead session'}">✕</button>`;
+      return `<div class="${cls}" data-sid="${escapeHtml(s.sid)}" data-label="${escapeHtml(label)}" title="${escapeHtml(tip)}">${dot} ${escapeHtml(label)}<div class="meta">${escapeHtml(cwd)}</div><div class="actions">${deleteBtn}</div></div>`;
     }).join('');
+    liveIssueSessions = nextLiveIssueSessions;
+    syncIssueClaimState();
     renderNeedsMe();
     renderActivity();
     renderTabBar();
@@ -995,6 +1362,8 @@ function renderActivity() {
   items.sort((a, b) => b.ts - a.ts);
   const top = items.slice(0, 8);
   document.getElementById('activityCount').textContent = `${top.length} recent`;
+  const tabCountEl = document.getElementById('tabCountActivity');
+  if (tabCountEl) tabCountEl.textContent = String(top.length);
   const el = document.getElementById('activity');
   if (!top.length) { el.innerHTML = '<div class="empty">nothing recent yet</div>'; return; }
   el.innerHTML = top.map(item => {
@@ -1012,6 +1381,12 @@ function renderActivity() {
 
 // Event delegation for PTY rows — survives re-renders by listPtys().
 document.getElementById('ptys').addEventListener('click', (e) => {
+  const del = e.target.closest('[data-action="pty-delete"]');
+  if (del) {
+    e.stopPropagation();
+    deletePty(del.dataset.sid, del.dataset.label);
+    return;
+  }
   const row = e.target.closest('.pty');
   if (!row) return;
   selectPty(row.dataset.sid, row.dataset.label);
@@ -1024,7 +1399,7 @@ document.getElementById('tab-bar').addEventListener('click', (e) => {
     e.stopPropagation();
     const sid = closeBtn.dataset.sid;
     if (!confirm('Close this terminal session? Any running command will be killed.')) return;
-    fetch('/api/pty/close', {method:'POST', headers:{'Content-Type':'application/json'},
+    fetch('/api/pty/delete', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({sid})}).catch(()=>{});
     listPtys();
     return;
@@ -1068,6 +1443,16 @@ async function newAgentShell(cwd) {
 }
 
 async function launchIssueShell(num) {
+  const live = issueSessionFor(num);
+  if (live) {
+    selectPty(live.sid, live.label || `#${num}`);
+    return;
+  }
+  const issue = allIssues.find(it => it && String(it.number) === String(num));
+  if (issue && issue.in_progress) {
+    showToast(`issue #${num} is already claimed`, 'err');
+    return;
+  }
   const ag = currentAgent();
   showToast(`preparing worktree for #${num} + launching ${agentLabel(ag)}…`, '');
   try {
@@ -1076,6 +1461,26 @@ async function launchIssueShell(num) {
     const data = await r.json();
     if (data.error) { showToast('error: ' + data.error, 'err'); return; }
     showToast(`#${num} → ${agentLabel(data.agent || ag)} running interactively`, 'ok');
+    const normalized = {
+      sid: data.sid,
+      label: data.label || `#${num}`,
+      cwd: data.cwd || '',
+      alive: true,
+      issue: num,
+      kind: 'issue',
+      pr: null,
+      branch: data.branch || '',
+      worktree: data.worktree || '',
+      prompt_file: data.prompt_file || '',
+      started: Math.floor(Date.now() / 1000),
+      last_output: Math.floor(Date.now() / 1000),
+      last_input: Math.floor(Date.now() / 1000),
+      rows: term.rows,
+      cols: term.cols,
+    };
+    allPtys = allPtys.filter(s => String(s.sid) !== String(data.sid));
+    allPtys.push(normalized);
+    liveIssueSessions.set(String(num), normalized);
     sessionPRInfo.set(data.sid, {issue: num, branch: data.branch, kind: 'issue', url: data.issue_url || '', agent: data.agent || ag});
     await listPtys();
     selectPty(data.sid, data.label || `#${num}`);
@@ -1127,6 +1532,37 @@ async function removeWorktree(name, quiet) {
   } catch(e) { showToast('remove failed: ' + e, 'err'); }
 }
 
+async function deletePty(sid, label) {
+  if (!sid) return;
+  const alive = allPtys.find(s => s.sid === sid)?.alive;
+  if (alive && !confirm('Close this live session?')) return;
+  try {
+    const r = await fetch('/api/pty/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sid})
+    });
+    const d = await r.json();
+    if (d.error || !d.ok) {
+      showToast('error: ' + (d.error || 'close failed'), 'err');
+      return;
+    }
+    if (view && view.kind === 'pty' && view.sid === sid) {
+      stopStreams();
+      view = null;
+      inputHandler = null;
+      document.getElementById('title').textContent = 'pick a file or open a shell →';
+      document.getElementById('pr-bar').className = '';
+      document.querySelectorAll('aside .pty').forEach(el => el.classList.remove('active'));
+      term.reset();
+    }
+    showToast(`closed session ${label || sid}`, 'ok');
+    await listPtys();
+  } catch(e) {
+    showToast('close failed: ' + e, 'err');
+  }
+}
+
 async function cleanupState(dryRun) {
   const days = parseInt(prompt(dryRun ? 'audit state files older than how many days?' : 'PRUNE state files older than how many days? (deletes implementer/orchestrator logs, prompts, diffs, drafts)', '7'), 10);
   if (!Number.isFinite(days) || days < 0) return;
@@ -1146,6 +1582,45 @@ async function cleanupState(dryRun) {
 
 document.getElementById('newShellBtn').onclick = () => newShell(null, 'shell · repo root');
 document.getElementById('newAgentBtn').onclick = () => newAgentShell(null);
+
+// ---------- read modal ----------
+function openReadModal(num) {
+  const it = allIssues.find(i => i && i.number === num);
+  if (!it) return;
+  document.getElementById('modal-num').textContent = '#' + num;
+  document.getElementById('modal-title').textContent = it.title || '';
+  const ghLink = document.getElementById('modal-gh-link');
+  ghLink.href = it.url || '#';
+  const bodyEl = document.getElementById('modal-body');
+  let body = _issueBodyCache.get(String(num));
+  if (body) {
+    bodyEl.innerHTML = renderIssueBody(body);
+  } else {
+    bodyEl.innerHTML = '<div class="body-loading">loading…</div>';
+    fetch('/api/issue?num=' + num)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { bodyEl.innerHTML = '<div class="body-err">' + escapeHtml(d.error) + '</div>'; return; }
+        body = d.body || '_(empty body)_';
+        _issueBodyCache.set(String(num), body);
+        bodyEl.innerHTML = renderIssueBody(body);
+      })
+      .catch(err => { bodyEl.innerHTML = '<div class="body-err">fetch failed: ' + escapeHtml(String(err)) + '</div>'; });
+  }
+  document.getElementById('modal-backdrop').classList.add('show');
+  // Focus the close button for keyboard nav
+  document.getElementById('modal-panel').querySelector('.close-btn').focus();
+}
+
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.remove('show');
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('modal-backdrop').classList.contains('show')) {
+    closeModal();
+  }
+});
 
 // ---------- styled tooltip controller ----------
 // One floating element, repositioned on hover. Reads from `title` (so every
@@ -1248,6 +1723,7 @@ async function checkCodeMtime() {
 }
 
 loadAgents().then(d => { if (d && d.code_mtime) _codeMtime = d.code_mtime; });
+showSidebarTab(activeSidebarTab);
 listFiles(); listWorktrees(); listIssues(); listPRs(); listPtys();
 setInterval(listFiles, 5000);
 setInterval(listWorktrees, 4000);

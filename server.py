@@ -20,6 +20,10 @@ RAW_INDEX_HTML = _UI.INDEX_HTML
 
 INDEX_HTML = RAW_INDEX_HTML.replace("__REPO_NAME__", REPO_NAME)
 
+def _slugify(text, limit=40):
+    slug = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return slug[:limit] or "prompt"
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quieter
         pass
@@ -175,6 +179,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             result = merge_pr(pr, strategy)
             return self._send_json(result, 200 if result.get("merged") else 400)
 
+        if u.path == "/api/issue/update":
+            try:
+                issue = int(payload.get("issue"))
+            except (TypeError, ValueError):
+                return self._send_json({"error": "issue must be int"}, 400)
+            title = payload.get("title")
+            body_text = payload.get("body")
+            result = update_issue(issue, title=title, body=body_text)
+            status = 200 if not result.get("error") else 400
+            return self._send_json(result, status)
+
+        if u.path == "/api/issue/delete":
+            try:
+                issue = int(payload.get("issue"))
+            except (TypeError, ValueError):
+                return self._send_json({"error": "issue must be int"}, 400)
+            result = close_issue(issue)
+            status = 200 if not result.get("error") else 400
+            return self._send_json(result, status)
+
         if u.path == "/api/pty/new":
             kind = payload.get("kind", "shell")
             rows = int(payload.get("rows") or 30)
@@ -266,6 +290,83 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "cwd": sess["cwd"],
                     "agent": agent["id"],
                     "model": agent.get("model"),
+                })
+            if kind == "agent-prompt":
+                cwd_in = payload.get("cwd")
+                if not cwd_in:
+                    cwd_path = REPO_ROOT.resolve()
+                else:
+                    p = Path(cwd_in)
+                    if not p.is_absolute():
+                        p = REPO_ROOT / p
+                    cwd_path = p.resolve()
+                try:
+                    cwd_path.relative_to(REPO_ROOT.resolve())
+                except ValueError:
+                    return self._send_json({"error": "cwd must be inside repo"}, 400)
+
+                prompt = (payload.get("prompt") or "").strip()
+                if not prompt:
+                    return self._send_json({"error": "prompt is required"}, 400)
+
+                agent = resolve_agent(
+                    payload.get("agent"),
+                    override_model=payload.get("model"),
+                    override_bin=payload.get("bin"),
+                    override_yolo=payload.get("yolo_flag"),
+                )
+                prompt_slug = _slugify(payload.get("label") or prompt)
+                prompt_file = STATE_DIR / f"prompt-{secrets.token_hex(4)}-{prompt_slug}.md"
+                prompt_file.write_text(prompt)
+                agent_cmd = build_agent_cmd(agent, f"$(cat {shlex.quote(str(prompt_file))})")
+
+                env_extra = {
+                    "PROMPT_FILE": str(prompt_file),
+                    "PS1": "\\[\\e[36m\\]" + agent["id"] + "\\[\\e[0m\\]:\\W$ ",
+                }
+                wrapper = (
+                    'echo "──── starting {bin} ({yolo_short}) — prompt ────"; '
+                    'echo "      agent:  {agent_label}"; '
+                    'echo "      model:  {model}"; '
+                    'echo "      prompt: $PROMPT_FILE"; '
+                    'echo "      cwd:    $(pwd)"; '
+                    'echo "────"; '
+                    '{agent_cmd}; '
+                    'ec=$?; '
+                    'echo; '
+                    'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
+                    'exec {shell} -i'
+                ).format(
+                    bin=shlex.quote(agent["bin"]),
+                    yolo_short=agent_short(agent),
+                    agent_label=agent["label"],
+                    model=agent.get("model") or "(agent default)",
+                    agent_cmd=agent_cmd,
+                    shell=shlex.quote(USER_SHELL),
+                )
+                argv = ["bash", "-c", wrapper]
+                sess = spawn_pty(
+                    argv,
+                    cwd=str(cwd_path),
+                    env_extra=env_extra,
+                    label=f"{agent['id']} · {prompt_slug}",
+                    rows=rows,
+                    cols=cols,
+                    meta={
+                        "kind": "prompt",
+                        "agent": agent["id"],
+                        "prompt_file": str(prompt_file),
+                        "cwd": str(cwd_path),
+                    },
+                )
+                return self._send_json({
+                    "sid": sess["sid"],
+                    "label": sess["label"],
+                    "cwd": sess["cwd"],
+                    "agent": agent["id"],
+                    "model": agent.get("model"),
+                    "prompt_file": str(prompt_file),
+                    "prompt": prompt,
                 })
             if kind == "pr-review":
                 try:
@@ -562,6 +663,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     issue = int(payload.get("issue"))
                 except (TypeError, ValueError):
                     return self._send_json({"error": "issue must be int"}, 400)
+                existing = live_issue_pty(issue)
+                if existing:
+                    meta = existing.get("meta") or {}
+                    agent = resolve_agent(
+                        payload.get("agent"),
+                        override_model=payload.get("model"),
+                        override_bin=payload.get("bin"),
+                        override_yolo=payload.get("yolo_flag"),
+                    )
+                    return self._send_json({
+                        "sid": existing["sid"],
+                        "label": existing.get("label") or f"#{issue}",
+                        "cwd": existing.get("cwd") or "",
+                        "issue": issue,
+                        "branch": meta.get("branch"),
+                        "prompt_file": meta.get("prompt_file"),
+                        "agent": agent["id"],
+                        "model": agent.get("model"),
+                        "reused": True,
+                    })
                 prep = prepare_issue_worktree(issue)
                 if prep.get("error"):
                     return self._send_json(prep, 400)
@@ -613,9 +734,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     shell=shlex.quote(USER_SHELL),
                 )
                 argv = ["bash", "-c", wrapper]
-                sess = spawn_pty(argv, cwd=str(wt), env_extra=env_extra,
-                                 label=f"{agent['id']} #{issue} · {wt.name}",
-                                 rows=rows, cols=cols)
+                sess = spawn_pty(
+                    argv,
+                    cwd=str(wt),
+                    env_extra=env_extra,
+                    label=f"{agent['id']} #{issue} · {wt.name}",
+                    rows=rows,
+                    cols=cols,
+                    meta={
+                        "issue": issue,
+                        "kind": "issue",
+                        "branch": prep.get("branch", ""),
+                        "worktree": str(wt),
+                        "prompt_file": prompt_file,
+                    },
+                )
                 return self._send_json({
                     "sid": sess["sid"],
                     "label": sess["label"],
@@ -625,6 +758,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "prompt_file": prompt_file,
                     "agent": agent["id"],
                     "model": agent.get("model"),
+                    "reused": False,
                 })
             return self._send_json({"error": f"unknown kind: {kind}"}, 400)
 
@@ -649,6 +783,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == "/api/pty/close":
             sid = payload.get("sid", "")
             ok = kill_pty(sid)
+            return self._send_json({"ok": ok})
+
+        if u.path == "/api/pty/delete":
+            sid = payload.get("sid", "")
+            ok = delete_pty(sid)
             return self._send_json({"ok": ok})
 
         if u.path == "/api/worktree/remove":
