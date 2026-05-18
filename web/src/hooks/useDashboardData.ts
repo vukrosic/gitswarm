@@ -96,12 +96,18 @@ export function useDashboardData(issueFilter: IssueFilter) {
       if (seq !== loadSeq.current) return;
       setSnapshot(next);
       if (!hasAutoSelectedRef.current && selectionRef.current.kind === 'none') {
-        if (next.issues.length) setSelection({ kind: 'issue', id: next.issues[0].number });
-        else if (next.milestones.length) setSelection({ kind: 'milestone', id: next.milestones[0].number });
-        else if (next.prs.length) setSelection({ kind: 'pr', id: next.prs[0].number });
-        else if (next.ptys.length) setSelection({ kind: 'pty', id: next.ptys[0].sid });
-        else if (next.worktrees.length) setSelection({ kind: 'worktree', id: next.worktrees[0].name });
-        else if (next.files.length) setSelection({ kind: 'file', id: next.files[0].name });
+        const firstIssue = next.issues.find((it) => Number.isFinite(it.number));
+        const firstMilestone = next.milestones.find((it) => Number.isFinite(it.number));
+        const firstPr = next.prs.find((it) => Number.isFinite(it.number));
+        const firstPty = next.ptys.find((it) => !!it.sid);
+        const firstWorktree = next.worktrees.find((it) => !!it.name);
+        const firstFile = next.files.find((it) => !!it.name);
+        if (firstIssue) setSelection({ kind: 'issue', id: firstIssue.number });
+        else if (firstMilestone) setSelection({ kind: 'milestone', id: firstMilestone.number });
+        else if (firstPr) setSelection({ kind: 'pr', id: firstPr.number });
+        else if (firstPty) setSelection({ kind: 'pty', id: firstPty.sid });
+        else if (firstWorktree) setSelection({ kind: 'worktree', id: firstWorktree.name });
+        else if (firstFile) setSelection({ kind: 'file', id: firstFile.name });
         hasAutoSelectedRef.current = true;
       }
       setError('');
@@ -159,7 +165,7 @@ export function useDashboardData(issueFilter: IssueFilter) {
   }, [milestones, selection]);
 
   useEffect(() => {
-    if (selection.kind === 'issue') {
+    if (selection.kind === 'issue' && Number.isFinite(selection.id)) {
       const issue = issues.find((it) => it.number === selection.id) || null;
       setIssueDetail(issue);
       setIssueBody(issue?.body || '');
@@ -179,10 +185,10 @@ export function useDashboardData(issueFilter: IssueFilter) {
   }, [selection, issues]);
 
   useEffect(() => {
-    if (selection.kind === 'pr') {
+    if (selection.kind === 'pr' && Number.isFinite(selection.id)) {
       const pr = prs.find((it) => it.number === selection.id);
       setPrDetail(pr || null);
-      if (pr) {
+      if (pr && Number.isFinite(pr.number)) {
         let cancelled = false;
         void fetchPr(pr.number)
           .then((detail) => {

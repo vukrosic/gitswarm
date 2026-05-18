@@ -116,6 +116,19 @@ export interface FileEntry {
   mtime: number;
 }
 
+export interface GridSession {
+  sid: string;
+  issue: number;
+  label: string;
+  alive: boolean;
+  cwd: string;
+  kind?: string;
+  started?: number;
+  last_output?: number;
+  rows?: number;
+  cols?: number;
+}
+
 export interface PtySession {
   sid: string;
   label: string;
@@ -150,6 +163,14 @@ export interface Snapshot {
   agents: Agent[];
   defaultAgent: string;
   codeMtime: number;
+}
+
+export interface AgentGridState {
+  sessions: GridSession[];
+  launched: boolean;
+  agent: string;
+  gridSessions: GridSession[];
+  loading: boolean;
 }
 
 export interface PtyStreamResult {

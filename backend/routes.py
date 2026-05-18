@@ -2,6 +2,9 @@
 from urllib.parse import unquote
 
 
+_AGENT_GRID = {"active": False, "sessions": [], "agent": ""}
+
+
 def _query_value(qs, name, default=""):
     value = qs.get(name, default)
     if isinstance(value, list):
@@ -43,6 +46,8 @@ def dispatch_get(handler, u, qs, send_json_fn):
         return _handle_pty_stream(handler, qs, send_json_fn)
     if path == "/api/file":
         return _handle_file_read(handler, qs, send_json_fn)
+    if path == "/api/agent-grid/status":
+        return _handle_agent_grid_status(handler, send_json_fn)
     # Fall-through to 404
     handler.send_response(404)
     handler.end_headers()
@@ -190,6 +195,10 @@ def dispatch_post(handler, u, payload, send_json_fn):
         return _handle_worktree_remove(handler, payload, send_json_fn)
     if path == "/api/state/cleanup":
         return _handle_state_cleanup(handler, payload, send_json_fn)
+    if path == "/api/agent-grid/launch":
+        return _handle_agent_grid_launch(handler, payload, send_json_fn)
+    if path == "/api/agent-grid/close":
+        return _handle_agent_grid_close(handler, payload, send_json_fn)
     # Issue CRUD — delegate to github
     if path in ("/api/issue/update", "/api/issue/delete", "/api/issue/create"):
         return _handle_issue(handler, path, payload, send_json_fn)
@@ -1141,3 +1150,128 @@ def _handle_issue_review(handler, payload, rows, cols, send_json_fn):
         "prompt_file": prompt_file,
         "review_url_file": str(review_url_file),
     })
+
+
+def _handle_agent_grid_status(handler, send_json_fn):
+    from github import list_ptys, reap_dead_ptys
+    reap_dead_ptys()
+    grid_sessions = [s for s in list_ptys() if s.get("kind") == "agent-grid-cell"]
+    return send_json_fn(handler, {
+        "active": _AGENT_GRID["active"],
+        "sessions": list_ptys(),
+        "gridSessions": grid_sessions,
+        "agent": _AGENT_GRID.get("agent", ""),
+    })
+
+
+def _handle_agent_grid_launch(handler, payload, send_json_fn):
+    from github import (
+        prepare_issue_worktree, spawn_pty, resolve_agent, build_agent_cmd,
+        agent_short, USER_SHELL, REPO_ROOT,
+    )
+    import shlex
+    try:
+        agent_id = payload.get("agent", "")
+        issue_numbers = payload.get("issueNumbers", [])
+        cols = int(payload.get("cols") or 3)
+        rows = int(payload.get("rows") or 2)
+    except (TypeError, ValueError):
+        return send_json_fn(handler, {"error": "invalid payload"}, 400)
+
+    if not isinstance(issue_numbers, list) or len(issue_numbers) == 0:
+        return send_json_fn(handler, {"error": "issueNumbers must be a non-empty list"}, 400)
+
+    agent = resolve_agent(agent_id)
+    total_cells = cols * rows
+    issue_nums = issue_numbers[:total_cells]
+    if len(issue_nums) < total_cells:
+        return send_json_fn(handler, {"error": f"need {total_cells} issues, got {len(issue_nums)}"}, 400)
+
+    # Build cell labels: A1, B1, C1, A2, B2, C2 for 3x2
+    cell_labels = []
+    for r in range(rows):
+        for c in range(cols):
+            cell_labels.append(chr(65 + r) + str(c + 1))
+
+    created = []
+    errors = []
+    for idx, issue_num in enumerate(issue_nums):
+        cell = cell_labels[idx]
+        label = f"grid-{cell} · #{issue_num}"
+        prep = prepare_issue_worktree(issue_num)
+        if prep.get("error"):
+            errors.append({"cell": cell, "issue": issue_num, "error": prep["error"]})
+            continue
+        wt = prep.get("worktree", "")
+        prompt_file = prep.get("prompt_file") or ""
+
+        agent_cmd = build_agent_cmd(agent, '$(cat "$AGENT_PROMPT_FILE")')
+        env_extra = {
+            "AGENT_ISSUE": str(issue_num),
+            "AGENT_BRANCH": prep.get("branch", ""),
+            "AGENT_PROMPT_FILE": prompt_file,
+            "PS1": f"\\[\\e[33m\\]grid-{cell} · #{issue_num}\\[\\e[0m\\]:\\W$ ",
+        }
+        wrapper = (
+            'echo "──── starting {bin} ({yolo_short}) grid cell {cell} on issue #{issue} ────"; '
+            'echo "      agent:  {agent_label}"; '
+            'echo "      model:  {model}"; '
+            'echo "      cell:   {cell}"; '
+            'echo "      branch: $AGENT_BRANCH"; '
+            'echo "      prompt: $AGENT_PROMPT_FILE"; '
+            'echo "────"; '
+            '{agent_cmd}; '
+            'ec=$?; '
+            'echo; '
+            'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
+            'exec {shell} -i'
+        ).format(
+            bin=shlex.quote(agent["bin"]),
+            yolo_short=agent_short(agent),
+            cell=cell,
+            issue=issue_num,
+            agent_label=agent["label"],
+            model=agent.get("model") or "(agent default)",
+            agent_cmd=agent_cmd,
+            shell=shlex.quote(USER_SHELL),
+        )
+        argv = ["bash", "-c", wrapper]
+        sess = spawn_pty(
+            argv,
+            cwd=str(REPO_ROOT / wt) if wt else str(REPO_ROOT),
+            env_extra=env_extra,
+            label=label,
+            rows=30,
+            cols=120,
+            meta={
+                "kind": "agent-grid-cell",
+                "cell": cell,
+                "issue": issue_num,
+                "branch": prep.get("branch", ""),
+                "worktree": wt,
+                "prompt_file": prompt_file,
+            },
+        )
+        created.append({"cell": cell, "sid": sess["sid"], "issue": issue_num})
+
+    _AGENT_GRID["active"] = True
+    _AGENT_GRID["agent"] = agent_id
+    _AGENT_GRID["sessions"] = created
+
+    return send_json_fn(handler, {
+        "launched": True,
+        "cells": created,
+        "errors": errors,
+        "total": total_cells,
+    })
+
+
+def _handle_agent_grid_close(handler, payload, send_json_fn):
+    from github import list_ptys, kill_pty, delete_pty
+    grid_sids = [s["sid"] for s in list_ptys() if s.get("kind") == "agent-grid-cell"]
+    for sid in grid_sids:
+        kill_pty(sid)
+        delete_pty(sid)
+    _AGENT_GRID["active"] = False
+    _AGENT_GRID["sessions"] = []
+    return send_json_fn(handler, {"closed": True, "killed": len(grid_sids)})

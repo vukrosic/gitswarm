@@ -4,6 +4,7 @@ import {
   deleteIssue,
   deletePty,
   closePty,
+  launchAgentGrid,
   launchShell,
   ptyInput,
   removeWorktree,
@@ -19,12 +20,13 @@ import { AppHeader } from './components/AppHeader';
 import { DashboardSidebar } from './components/DashboardSidebar';
 import { TerminalDock } from './components/TerminalDock';
 import { MainContent } from './panes/MainContent';
+import { AgentGridPane } from './panes/AgentGridPane';
 import { useDashboardData } from './hooks/useDashboardData';
 import { usePtyStream } from './hooks/usePtyStream';
 
 function loadPersistedPane(): Pane {
   const value = localStorage.getItem('gitswarm.pane');
-  if (value === 'issues' || value === 'prs' || value === 'pty' || value === 'worktrees' || value === 'files' || value === 'launch' || value === 'milestones') {
+  if (value === 'issues' || value === 'prs' || value === 'pty' || value === 'worktrees' || value === 'files' || value === 'launch' || value === 'milestones' || value === 'agent-grid') {
     return value as Pane;
   }
   return 'issues';
@@ -136,6 +138,19 @@ export default function App() {
 
   function shouldOpenInDock(pty: Pick<PtySession, 'kind'> | null | undefined) {
     return pty?.kind === 'shell' || pty?.kind === 'agent-shell';
+  }
+
+  const gridSessions = ptys.filter((p) => p.kind === 'agent-grid-cell') as unknown as import('./panes/AgentGridPane').GridSession[];
+  const gridActive = gridSessions.length > 0;
+  const gridLoading = false;
+
+  async function handleLaunchGrid(agent: string, issueNumbers: number[], cols: number, rows: number) {
+    await run('launch grid', async () => {
+      const result = await launchAgentGrid(agent, issueNumbers, cols, rows);
+      await load();
+      return result;
+    });
+    setPane('agent-grid');
   }
 
   function focusMainPty(sid: string) {
@@ -501,6 +516,17 @@ export default function App() {
           onWorktreeRemove={(worktree) => void handleWorktreeRemove(worktree)}
         />
 
+        {pane === 'agent-grid' ? (
+          <AgentGridPane
+            agents={agents}
+            selectedAgent={selectedAgent}
+            onAgentChange={setSelectedAgent}
+            onLaunch={handleLaunchGrid}
+            onFocusSession={focusMainPty}
+            gridSessions={gridSessions}
+            loading={gridLoading}
+          />
+        ) : (
         <MainContent
           pane={pane}
           loading={loading}
@@ -551,6 +577,7 @@ export default function App() {
           onBatchClaimNext={() => void handleBatchClaimNext()}
           onPruneMerged={() => void handlePruneMergedWorktrees()}
         />
+        )}
 
         <div className={`grid min-h-0 gap-3 overflow-hidden ${dockCollapsed ? 'grid-rows-[auto]' : 'grid-rows-[minmax(0,1fr)]'} max-lg:col-span-full max-lg:grid-cols-[minmax(360px,1.2fr)_minmax(260px,0.8fr)] max-md:grid-cols-1`}>
           <TerminalDock

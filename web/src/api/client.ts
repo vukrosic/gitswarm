@@ -1,4 +1,4 @@
-import type { Agent, FileEntry, Issue, Milestone, PullRequest, PtyStreamResult, PtySession, RunningWorktree, Snapshot, Worktree } from '../types';
+import type { Agent, FileEntry, GridSession, Issue, Milestone, PullRequest, PtyStreamResult, PtySession, RunningWorktree, Snapshot, Worktree } from '../types';
 
 type JsonInit = RequestInit & { json?: unknown };
 
@@ -165,4 +165,24 @@ export async function readPtyStream(sid: string, offset: number, timeout = 15): 
     drop: Number(res.headers.get('X-Drop') || '0'),
     reset: res.headers.get('X-Reset') === '1',
   };
+}
+
+export async function launchAgentGrid(agent: string, issueNumbers: number[], cols: number, rows: number) {
+  return requestJson('/api/agent-grid/launch', {
+    method: 'POST',
+    json: { agent, issueNumbers, cols, rows },
+  });
+}
+
+export async function fetchAgentGridStatus() {
+  return requestJson<{
+    active: boolean;
+    sessions: PtySession[];
+    gridSessions: GridSession[];
+    agent: string;
+  }>('/api/agent-grid/status');
+}
+
+export async function closeAgentGrid() {
+  return requestJson('/api/agent-grid/close', { method: 'POST' });
 }

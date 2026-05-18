@@ -176,6 +176,8 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
           tone: item.available ? 'success' : 'destructive',
           item,
         }));
+      case 'agent-grid':
+        return [];
       default:
         return [];
     }

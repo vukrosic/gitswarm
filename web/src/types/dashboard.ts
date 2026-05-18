@@ -1,4 +1,4 @@
-export type Pane = 'issues' | 'milestones' | 'prs' | 'pty' | 'worktrees' | 'files' | 'launch';
+export type Pane = 'issues' | 'milestones' | 'prs' | 'pty' | 'worktrees' | 'files' | 'launch' | 'agent-grid';
 export type IssueFilter = 'all' | 'claim-next' | 'good first issue' | 'agent-friendly' | 'needs-validation' | 'parked';
 export type SidebarItemKind = 'issue' | 'milestone' | 'pr' | 'pty' | 'worktree' | 'file' | 'agent';
 

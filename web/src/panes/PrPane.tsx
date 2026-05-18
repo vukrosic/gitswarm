@@ -66,7 +66,7 @@ function ReviewCommentBlock({ comment }: { comment: GitHubReviewComment }) {
 }
 
 export function PrPane({ pr, diff, onReview, onMerge, onFixCi }: PrPaneProps) {
-  const chips = [...pr.labels, ...(pr.ci ? [pr.ci] : [])];
+  const chips = [...(pr.labels || []), ...(pr.ci ? [pr.ci] : [])];
   const comments = pr.comments || [];
   const reviews = pr.reviews || [];
   const reviewComments = pr.review_comments || [];

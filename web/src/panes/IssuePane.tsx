@@ -41,7 +41,7 @@ export function IssuePane({ issue, body, onBodyChange: _onBodyChange, onClaim, o
           `${comments.length || issue.comment_count || 0} comments`,
         ].filter(Boolean).join(' · ')}
         chips={[
-          ...issue.labels,
+          ...(issue.labels || []),
           issue.milestone?.title ? `milestone: ${issue.milestone.title}` : '',
         ].filter(Boolean) as string[]}
         actions={

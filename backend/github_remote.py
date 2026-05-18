@@ -362,7 +362,9 @@ def list_issues():
             it["suggested_labels"] = _issue_label_suggestions(it.get("title") or "", it["body"])
             author = it.get("author") or {}
             it["author"] = author.get("login") if isinstance(author, dict) else ""
-            it["comment_count"] = it.get("comments") or 0
+            raw_comments = it.get("comments") or []
+            it["comment_count"] = len(raw_comments) if isinstance(raw_comments, list) else 0
+            it.pop("comments", None)
         _ISSUES_CACHE.update({"ts": time.time(), "data": issues})
         return issues
     except Exception as e:
