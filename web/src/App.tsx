@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  addProject,
+  activateProject,
   createIssue,
   deleteIssue,
   deletePty,
@@ -43,6 +45,7 @@ export default function App() {
   const [selectedAgent, setSelectedAgent] = useState(() => localStorage.getItem('gitswarm.agent') || 'codex');
   const [issueTitle, setIssueTitle] = useState('');
   const [issueDraftBody, setIssueDraftBody] = useState('');
+  const [projectPath, setProjectPath] = useState('');
   const [dockPtyId, setDockPtyId] = useState(() => localStorage.getItem('gitswarm.dockPtyId') || '');
   const [dockCollapsed, setDockCollapsed] = useState(() => localStorage.getItem('gitswarm.terminalDockCollapsed') === '1');
   const [notifications, setNotifications] = useState<GitHubNotification[]>([]);
@@ -60,6 +63,8 @@ export default function App() {
     setIssueBody,
     prDiff,
     fileText,
+    projects,
+    activeProject,
     issues,
     milestones,
     prs,
@@ -281,6 +286,26 @@ export default function App() {
     focusLaunchResult(result, 'dock');
   }
 
+  async function handleAddProject() {
+    const repoRoot = projectPath.trim();
+    if (!repoRoot) return;
+    await run('add project', async () => {
+      await addProject(repoRoot);
+    });
+    setProjectPath('');
+    setDockPtyId('');
+    setPtyText('');
+  }
+
+  async function handleActivateProject(projectId: string) {
+    if (!projectId || activeProject?.id === projectId) return;
+    await run('switch project', async () => {
+      await activateProject(projectId);
+    });
+    setDockPtyId('');
+    setPtyText('');
+  }
+
   async function handleDeleteIssue(issue: Issue) {
     if (!confirm(`Delete issue #${issue.number}?`)) return;
     await run(`delete #${issue.number}`, async () => {
@@ -495,11 +520,14 @@ export default function App() {
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <AppHeader
+        projects={projects}
+        activeProject={activeProject}
         agents={agents}
         defaultAgent={defaultAgent}
         selectedAgent={selectedAgent}
         busy={busy}
         dockCollapsed={dockCollapsed}
+        onProjectChange={(projectId) => void handleActivateProject(projectId)}
         onAgentChange={setSelectedAgent}
         onNewShell={() => void handleNewShell()}
         onNewAgent={() => void handleAgentShell()}
@@ -578,11 +606,15 @@ export default function App() {
           issueTitle={issueTitle}
           issueDraftBody={issueDraftBody}
           launchText={launchText}
+          projects={projects}
+          activeProject={activeProject}
+          projectPath={projectPath}
           onIssueBodyChange={setIssueBody}
           onPtyTextChange={setPtyText}
           onIssueTitleChange={setIssueTitle}
           onIssueDraftBodyChange={setIssueDraftBody}
           onLaunchTextChange={setLaunchText}
+          onProjectPathChange={setProjectPath}
           onClaimIssue={(issue) => void handleClaim(issue)}
           onReviewIssue={(issue) => void handleReviewIssue(issue)}
           onSaveIssue={(issue) => void handleEditIssue(issue)}
@@ -600,6 +632,7 @@ export default function App() {
           onNewShell={() => void handleNewShell()}
           onAgentShell={() => void handleAgentShell()}
           onPropose={() => void handlePropose()}
+          onAddProject={() => void handleAddProject()}
           onAuditCleanup={() => void handleCleanup(true)}
           onPruneCleanup={() => void handleCleanup(false)}
           onCreateIssue={() => void handleCreateIssue()}

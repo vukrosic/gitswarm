@@ -21,6 +21,8 @@ def dispatch_get(handler, u, qs, send_json_fn):
         return _handle_pr_meta(handler, qs, send_json_fn)
     if path == "/api/pr/diff":
         return _handle_pr_diff(handler, qs, send_json_fn)
+    if path == "/api/projects":
+        return _handle_projects(handler, send_json_fn)
     if path == "/api/agents":
         return _handle_agents(handler, send_json_fn)
     if path == "/api/files":
@@ -44,9 +46,10 @@ def dispatch_get(handler, u, qs, send_json_fn):
         from github import list_prs
         return send_json_fn(handler, {"prs": list_prs()})
     if path == "/api/pty/list":
-        from backend.pty_client import reap_dead_ptys, list_ptys
+        from backend.pty_client import reap_dead_ptys, list_ptys_for_repo
+        from github import REPO_ROOT
         reap_dead_ptys()
-        return send_json_fn(handler, {"sessions": list_ptys()})
+        return send_json_fn(handler, {"sessions": list_ptys_for_repo(REPO_ROOT)})
     if path == "/api/pty/stream":
         return _handle_pty_stream(handler, qs, send_json_fn)
     if path == "/api/file":
@@ -118,6 +121,11 @@ def _handle_agents(handler, send_json_fn):
     return send_json_fn(handler, {"agents": out, "default": DEFAULT_AGENT,
                                   "code_mtime": mtime,
                                   "code_mtime_path": newest})
+
+
+def _handle_projects(handler, send_json_fn):
+    from github import list_projects
+    return send_json_fn(handler, list_projects())
 
 
 def _handle_pty_stream(handler, qs, send_json_fn):
@@ -198,6 +206,10 @@ def dispatch_post(handler, u, payload, send_json_fn):
         return _handle_pty_delete(handler, payload, send_json_fn)
     if path == "/api/pty/rename":
         return _handle_pty_rename(handler, payload, send_json_fn)
+    if path == "/api/projects/add":
+        return _handle_project_add(handler, payload, send_json_fn)
+    if path == "/api/projects/activate":
+        return _handle_project_activate(handler, payload, send_json_fn)
     if path == "/api/worktree/remove":
         return _handle_worktree_remove(handler, payload, send_json_fn)
     if path == "/api/state/cleanup":
@@ -293,6 +305,30 @@ def _handle_pty_rename(handler, payload, send_json_fn):
         return send_json_fn(handler, {"error": "sid is required"}, 400)
     ok = pty_rename(sid, label)
     return send_json_fn(handler, {"ok": ok})
+
+
+def _handle_project_add(handler, payload, send_json_fn):
+    from github import add_project, list_projects
+    repo_root = (payload.get("repo_root") or payload.get("repo") or "").strip()
+    label = (payload.get("label") or "").strip() or None
+    if not repo_root:
+        return send_json_fn(handler, {"error": "repo_root is required"}, 400)
+    try:
+        project = add_project(repo_root, label=label, activate=True)
+    except Exception as e:
+        return send_json_fn(handler, {"error": str(e)}, 400)
+    return send_json_fn(handler, {"project": project, "projects": list_projects()})
+
+
+def _handle_project_activate(handler, payload, send_json_fn):
+    from github import activate_project, list_projects
+    project_id = (payload.get("project_id") or payload.get("id") or "").strip()
+    if not project_id:
+        return send_json_fn(handler, {"error": "project_id is required"}, 400)
+    project = activate_project(project_id)
+    if not project:
+        return send_json_fn(handler, {"error": "project not found"}, 404)
+    return send_json_fn(handler, {"project": project, "projects": list_projects()})
 
 
 def _handle_worktree_remove(handler, payload, send_json_fn):
@@ -1173,12 +1209,14 @@ def _handle_issue_review(handler, payload, rows, cols, send_json_fn):
 
 
 def _handle_agent_grid_status(handler, send_json_fn):
-    from github import list_ptys, reap_dead_ptys
+    from github import REPO_ROOT, reap_dead_ptys
+    from backend.pty_client import list_ptys_for_repo
     reap_dead_ptys()
-    grid_sessions = [s for s in list_ptys() if s.get("kind") == "agent-grid-cell"]
+    sessions = list_ptys_for_repo(REPO_ROOT)
+    grid_sessions = [s for s in sessions if s.get("kind") == "agent-grid-cell"]
     return send_json_fn(handler, {
         "active": _AGENT_GRID["active"],
-        "sessions": list_ptys(),
+        "sessions": sessions,
         "gridSessions": grid_sessions,
         "agent": _AGENT_GRID.get("agent", ""),
     })
@@ -1287,8 +1325,9 @@ def _handle_agent_grid_launch(handler, payload, send_json_fn):
 
 
 def _handle_agent_grid_close(handler, payload, send_json_fn):
-    from github import list_ptys, kill_pty, delete_pty
-    grid_sids = [s["sid"] for s in list_ptys() if s.get("kind") == "agent-grid-cell"]
+    from github import REPO_ROOT, kill_pty, delete_pty
+    from backend.pty_client import list_ptys_for_repo
+    grid_sids = [s["sid"] for s in list_ptys_for_repo(REPO_ROOT) if s.get("kind") == "agent-grid-cell"]
     for sid in grid_sids:
         kill_pty(sid)
         delete_pty(sid)

@@ -9,10 +9,13 @@ import time
 from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
-REPO_ROOT = Path.cwd().resolve()
+CONTROL_ROOT = Path.cwd().resolve()
+REPO_ROOT = CONTROL_ROOT
 REPO_NAME = REPO_ROOT.name
 STATE_DIR = REPO_ROOT / ".gitswarm" / "state"
 WORKTREES_DIR = REPO_ROOT / ".agent-worktrees"
+PROJECTS_DIR = CONTROL_ROOT / ".gitswarm"
+PROJECTS_FILE = PROJECTS_DIR / "projects.json"
 PROMPTS_DIR = PACKAGE_ROOT / "prompts"
 USER_SHELL = os.environ.get("SHELL", "/bin/bash")
 
@@ -58,8 +61,7 @@ AGENTS = {
 }
 DEFAULT_AGENT = os.environ.get("GITSWARM_AGENT", "codex")
 
-from backend.pty_runtime import (
-    init as _init_pty_runtime,
+from backend.pty_client import (
     spawn_pty,
     pty_write,
     pty_resize,
@@ -72,6 +74,14 @@ from backend.pty_runtime import (
     reap_dead_ptys,
     pty_in_use,
     spawn_shell_session,
+    init as _init_pty_client,
+)
+from backend.projects import (
+    bootstrap_project as bootstrap_project_registry,
+    get_active_project as get_active_project_registry,
+    list_projects as list_projects_registry,
+    upsert_project as upsert_project_registry,
+    activate_project as activate_project_registry,
 )
 from backend.github_remote import (
     init as _init_github_remote,
@@ -95,8 +105,48 @@ from backend.github_remote import (
     invalidate_caches,
 )
 
-_init_pty_runtime(REPO_ROOT, USER_SHELL)
+_init_pty_client(REPO_ROOT, USER_SHELL)
 _init_github_remote(REPO_ROOT, STATE_DIR)
+
+
+def set_repo_context(repo_root: Path):
+    """Point all repo-scoped helpers at a different project checkout."""
+    global REPO_ROOT, REPO_NAME, STATE_DIR, WORKTREES_DIR
+    REPO_ROOT = Path(repo_root).expanduser().resolve()
+    REPO_NAME = REPO_ROOT.name
+    STATE_DIR = REPO_ROOT / ".gitswarm" / "state"
+    WORKTREES_DIR = REPO_ROOT / ".agent-worktrees"
+    _init_pty_client(REPO_ROOT, USER_SHELL)
+    _init_github_remote(REPO_ROOT, STATE_DIR)
+
+
+def bootstrap_projects():
+    """Ensure the host checkout is present in the project registry."""
+    bootstrap_project_registry(CONTROL_ROOT)
+    active = get_active_project_registry()
+    if active and active.get("repo_root"):
+        set_repo_context(Path(active["repo_root"]))
+    else:
+        set_repo_context(CONTROL_ROOT)
+    return list_projects_registry()
+
+
+def list_projects():
+    return list_projects_registry()
+
+
+def add_project(repo_root, label=None, activate=True):
+    project = upsert_project_registry(repo_root, label=label, activate=activate)
+    if activate and project.get("repo_root"):
+        set_repo_context(Path(project["repo_root"]))
+    return project
+
+
+def activate_project(project_id):
+    project = activate_project_registry(project_id)
+    if project and project.get("repo_root"):
+        set_repo_context(Path(project["repo_root"]))
+    return project
 
 
 def resolve_agent(agent_id, override_model=None, override_bin=None, override_yolo=None):

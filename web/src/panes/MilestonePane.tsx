@@ -50,7 +50,7 @@ export function MilestonePane({ milestone, issues, onFocusIssue, onOpenGitHub }:
           <>
             {milestone.state === 'open' && (
               <Button
-                variant={closing ? 'muted' : 'destructive'}
+                variant={closing ? 'outline' : 'danger'}
                 size="sm"
                 onClick={handleClose}
                 disabled={closing}

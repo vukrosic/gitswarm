@@ -1,14 +1,17 @@
 import { ChevronLeft, ChevronRight, Plus, RefreshCw, Terminal as TerminalIcon } from 'lucide-react';
-import type { Agent } from '../types';
+import type { Agent, Project } from '../types';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface AppHeaderProps {
+  projects: Project[];
+  activeProject: Project | null;
   agents: Agent[];
   defaultAgent: string;
   selectedAgent: string;
   busy: string;
   dockCollapsed: boolean;
+  onProjectChange: (projectId: string) => void;
   onAgentChange: (agent: string) => void;
   onNewShell: () => void;
   onNewAgent: () => void;
@@ -17,17 +20,21 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({
+  projects,
+  activeProject,
   agents,
   defaultAgent,
   selectedAgent,
   busy,
   dockCollapsed,
+  onProjectChange,
   onAgentChange,
   onNewShell,
   onNewAgent,
   onRefresh,
   onToggleDock,
 }: AppHeaderProps) {
+  const projectOptions = projects.length ? projects : activeProject ? [activeProject] : [];
   const agentOptions = agents.length ? agents : [{ id: defaultAgent, label: defaultAgent, available: true, bin: '' } as Agent];
 
   return (
@@ -43,9 +50,38 @@ export function AppHeader({
           Claims, reviews, worktrees, and live terminals in one calm surface.
           {busy ? <span className="ml-2 text-warning">· {busy}…</span> : null}
         </p>
+        {activeProject ? (
+          <p className="max-w-[58ch] text-[11px] leading-relaxed text-muted-foreground/80">
+            Project: {activeProject.label} · {activeProject.repo_root}
+          </p>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            Project
+          </span>
+          <Select value={activeProject?.id || ''} onValueChange={onProjectChange}>
+            <SelectTrigger className="h-9 w-[260px]">
+              <SelectValue placeholder="Select project" />
+            </SelectTrigger>
+            <SelectContent>
+              {projectOptions.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  <span className="flex flex-col items-start gap-0.5">
+                    <span className="flex items-center gap-2">
+                      {project.label}
+                      {project.active ? <span className="text-[10px] uppercase tracking-wide text-success">active</span> : null}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">{project.repo_root}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
             Agent

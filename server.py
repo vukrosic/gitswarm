@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from backend.static import init as static_init, maybe_serve_frontend
 from backend.reload import init as reload_init
 from backend.http import send_json
-from github import STATE_DIR, WORKTREES_DIR
+import github as gh
 
 
 WEB_DIR = _HERE / "web"
@@ -74,6 +74,9 @@ def main():
     pid = daemon_pid()
     print(f"  pty_daemon: pid={pid}", flush=True)
 
+    projects = gh.bootstrap_projects()
+    active = gh.get_active_project_registry()
+
     def shutdown_handler():
         # Clean shutdown: tell daemon to exit, then exit server
         async def _do_shutdown():
@@ -86,8 +89,11 @@ def main():
     signal.signal(signal.SIGHUP, lambda *_: _graceful_reload())
 
     print(f"gitswarm dashboard: http://localhost:{port}", flush=True)
-    print(f"  state dir:   {STATE_DIR}", flush=True)
-    print(f"  worktrees:   {WORKTREES_DIR}", flush=True)
+    if active:
+        print(f"  project:     {active.get('label') or active.get('repo_name') or active.get('repo_root')}", flush=True)
+        print(f"  repo root:   {active.get('repo_root')}", flush=True)
+    print(f"  state dir:   {gh.STATE_DIR}", flush=True)
+    print(f"  worktrees:   {gh.WORKTREES_DIR}", flush=True)
     http.server.ThreadingHTTPServer(bind, Handler).serve_forever()
 
 

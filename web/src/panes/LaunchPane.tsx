@@ -1,4 +1,4 @@
-import type { Agent } from '../types';
+import type { Agent, Project } from '../types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,17 +6,22 @@ import { Textarea } from '@/components/ui/textarea';
 import { PaneHeader, PaneShell } from './_shared';
 
 interface LaunchPaneProps {
+  projects: Project[];
+  activeProject: Project | null;
   agents: Agent[];
   selectedAgent: string;
   issueTitle: string;
   issueBody: string;
   launchText: string;
+  projectPath: string;
   onIssueTitleChange: (value: string) => void;
   onIssueBodyChange: (value: string) => void;
   onLaunchTextChange: (value: string) => void;
+  onProjectPathChange: (value: string) => void;
   onNewShell: () => void;
   onAgentShell: () => void;
   onPropose: () => void;
+  onAddProject: () => void;
   onAuditCleanup: () => void;
   onPruneCleanup: () => void;
   onCreateIssue: () => void;
@@ -44,17 +49,22 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function LaunchPane({
+  projects,
+  activeProject,
   agents,
   selectedAgent,
   issueTitle,
   issueBody,
   launchText,
+  projectPath,
   onIssueTitleChange,
   onIssueBodyChange,
   onLaunchTextChange,
+  onProjectPathChange,
   onNewShell,
   onAgentShell,
   onPropose,
+  onAddProject,
   onAuditCleanup,
   onPruneCleanup,
   onCreateIssue,
@@ -119,6 +129,25 @@ export function LaunchPane({
                 {agent.available ? '' : ' · missing'}
               </Badge>
             ))}
+          </div>
+        </LaunchCard>
+
+        <LaunchCard title="Projects">
+          <Field label="Repo path">
+            <Input
+              value={projectPath}
+              onChange={(event) => onProjectPathChange(event.target.value)}
+              placeholder="/path/to/another/repo"
+            />
+          </Field>
+          <div className="flex justify-start gap-2">
+            <Button variant="primary" size="sm" onClick={onAddProject}>
+              Add project
+            </Button>
+          </div>
+          <div className="space-y-1 text-[11px] text-muted-foreground">
+            <div>Active project: {activeProject ? activeProject.label : 'none'}</div>
+            <div>{projects.length} registered project{projects.length === 1 ? '' : 's'}</div>
           </div>
         </LaunchCard>
       </div>

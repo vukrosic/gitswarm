@@ -36,12 +36,16 @@ interface MainContentProps {
   issueTitle: string;
   issueDraftBody: string;
   launchText: string;
+  projects: import('../types').Project[];
+  activeProject: import('../types').Project | null;
+  projectPath: string;
   notifications: GitHubNotification[];
   onIssueBodyChange: (value: string) => void;
   onPtyTextChange: (value: string) => void;
   onIssueTitleChange: (value: string) => void;
   onIssueDraftBodyChange: (value: string) => void;
   onLaunchTextChange: (value: string) => void;
+  onProjectPathChange: (value: string) => void;
   onClaimIssue: (issue: Issue) => void;
   onReviewIssue: (issue: Issue) => void;
   onSaveIssue: (issue: Issue) => void;
@@ -65,6 +69,7 @@ interface MainContentProps {
   onBatchReview: () => void;
   onBatchClaimNext: () => void;
   onPruneMerged: () => void;
+  onAddProject: () => void;
   onRefreshNotifications: () => void;
 }
 
@@ -90,6 +95,9 @@ export function MainContent(props: MainContentProps) {
     issueTitle,
     issueDraftBody,
     launchText,
+    projects,
+    activeProject,
+    projectPath,
     notifications,
     onRefreshNotifications,
     onIssueBodyChange,
@@ -97,6 +105,7 @@ export function MainContent(props: MainContentProps) {
     onIssueTitleChange,
     onIssueDraftBodyChange,
     onLaunchTextChange,
+    onProjectPathChange,
     onClaimIssue,
     onReviewIssue,
     onSaveIssue,
@@ -120,6 +129,7 @@ export function MainContent(props: MainContentProps) {
     onBatchReview,
     onBatchClaimNext,
     onPruneMerged,
+    onAddProject,
   } = props;
 
   return (
@@ -188,17 +198,22 @@ export function MainContent(props: MainContentProps) {
       {pane === 'files' && selectedFile ? <FilePane file={selectedFile} text={fileText} /> : null}
       {pane === 'launch' ? (
         <LaunchPane
+          projects={projects}
+          activeProject={activeProject}
           agents={agents}
           selectedAgent={selectedAgent}
           issueTitle={issueTitle}
           issueBody={issueDraftBody}
           launchText={launchText}
+          projectPath={projectPath}
           onIssueTitleChange={onIssueTitleChange}
           onIssueBodyChange={onIssueDraftBodyChange}
           onLaunchTextChange={onLaunchTextChange}
+          onProjectPathChange={onProjectPathChange}
           onNewShell={onNewShell}
           onAgentShell={onAgentShell}
           onPropose={onPropose}
+          onAddProject={onAddProject}
           onAuditCleanup={onAuditCleanup}
           onPruneCleanup={onPruneCleanup}
           onCreateIssue={onCreateIssue}

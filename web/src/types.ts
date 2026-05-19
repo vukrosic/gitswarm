@@ -56,6 +56,18 @@ export interface GitHubNotification {
   repository_full_name: string;
 }
 
+export interface Project {
+  id: string;
+  label: string;
+  repo_root: string;
+  repo_name: string;
+  github_slug: string;
+  state_dir: string;
+  worktree_dir: string;
+  exists?: boolean;
+  active?: boolean;
+}
+
 export interface Issue extends LabelledItem {
   number: number;
   title: string;
@@ -168,6 +180,8 @@ export interface Snapshot {
   issues: Issue[];
   milestones: Milestone[];
   prs: PullRequest[];
+  projects: Project[];
+  activeProject: Project | null;
   worktrees: Worktree[];
   running?: RunningWorktree[];
   files: FileEntry[];

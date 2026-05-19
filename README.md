@@ -6,6 +6,8 @@
 
 It is designed to run against any GitHub repo that has local git access and `gh` installed.
 
+The dashboard can also keep a small local project registry, so one host checkout can switch between multiple registered repos. Each project still stores its own `.gitswarm/state/` and `.agent-worktrees/`.
+
 > This project is usable, but it still has bugs and unfinished features. If you want a more stable version, wait about a week. If you want to dogfood it on your own repo today, Codex can help you solve issues and keep moving. You can also ask Codex to take inspiration from this and adapt the ideas into your own system.
 
 ## What it does

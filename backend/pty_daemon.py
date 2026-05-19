@@ -16,13 +16,15 @@ import signal
 import sys
 from pathlib import Path
 
+APP_ROOT = Path(__file__).resolve().parent.parent
+
 # Add parent to path so we can import pty_runtime
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(APP_ROOT))
 
 import pty_runtime
 
-SOCK_PATH = Path(".gitswarm/pty_daemon.sock")
-_PID_FILE = Path(".gitswarm/pty_daemon.pid")
+SOCK_PATH = APP_ROOT / ".gitswarm/pty_daemon.sock"
+_PID_FILE = APP_ROOT / ".gitswarm/pty_daemon.pid"
 SHUTDOWN = False
 
 

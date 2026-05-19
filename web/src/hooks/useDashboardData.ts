@@ -3,9 +3,13 @@ import { fetchFile, fetchIssue, fetchPr, fetchPrDiff, fetchSnapshot } from '../a
 import type { Issue, Milestone, PullRequest, Snapshot } from '../types';
 import type { ActivityItem, IssueFilter, Selection } from '../types/dashboard';
 
-function loadPersistedSelection(): Selection {
+function selectionKey(projectId: string) {
+  return `gitswarm.selection.${projectId || 'default'}`;
+}
+
+function loadPersistedSelection(key: string): Selection {
   try {
-    const raw = localStorage.getItem('gitswarm.selection');
+    const raw = localStorage.getItem(key);
     if (!raw) return { kind: 'none' };
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return { kind: 'none' };
@@ -26,15 +30,7 @@ export function useDashboardData(issueFilter: IssueFilter) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selection, setSelection] = useState<Selection>(() => loadPersistedSelection());
-
-  useEffect(() => {
-    if (selection.kind === 'none') {
-      localStorage.removeItem('gitswarm.selection');
-    } else {
-      localStorage.setItem('gitswarm.selection', JSON.stringify(selection));
-    }
-  }, [selection]);
+  const [selection, setSelection] = useState<Selection>({ kind: 'none' });
   const [issueBody, setIssueBody] = useState('');
   const [issueDetail, setIssueDetail] = useState<Issue | null>(null);
   const [prDetail, setPrDetail] = useState<PullRequest | null>(null);
@@ -45,7 +41,9 @@ export function useDashboardData(issueFilter: IssueFilter) {
   const selectionRef = useRef(selection);
   const issuesRef = useRef<Issue[]>([]);
   const prsRef = useRef<PullRequest[]>([]);
-  const hasAutoSelectedRef = useRef(selection.kind !== 'none');
+  const hasAutoSelectedRef = useRef(false);
+  const activeProjectRef = useRef('');
+  const selectionProjectRef = useRef('');
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
@@ -53,6 +51,8 @@ export function useDashboardData(issueFilter: IssueFilter) {
   const issues = snapshot?.issues || [];
   const milestones = snapshot?.milestones || [];
   const prs = snapshot?.prs || [];
+  const projects = snapshot?.projects || [];
+  const activeProject = snapshot?.activeProject || null;
   const worktrees = snapshot?.worktrees || [];
   const files = snapshot?.files || [];
   const ptys = snapshot?.ptys || [];
@@ -60,6 +60,36 @@ export function useDashboardData(issueFilter: IssueFilter) {
   const defaultAgent = snapshot?.defaultAgent || 'codex';
   issuesRef.current = issues;
   prsRef.current = prs;
+
+  const activeProjectId = activeProject?.id || '';
+  useEffect(() => {
+    if (!activeProjectId) return;
+    if (activeProjectRef.current === activeProjectId) return;
+    activeProjectRef.current = activeProjectId;
+    selectionProjectRef.current = '';
+    const persisted = loadPersistedSelection(selectionKey(activeProjectId));
+    if (persisted.kind === 'none') {
+      hasAutoSelectedRef.current = false;
+      setSelection({ kind: 'none' });
+    } else {
+      hasAutoSelectedRef.current = true;
+      setSelection(persisted);
+    }
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const key = selectionKey(activeProjectId);
+    if (selectionProjectRef.current !== activeProjectId) {
+      selectionProjectRef.current = activeProjectId;
+      return;
+    }
+    if (selection.kind === 'none') {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, JSON.stringify(selection));
+    }
+  }, [selection, activeProjectId]);
 
   const visibleIssues = useMemo(() => {
     if (issueFilter === 'all') return issues;
@@ -308,6 +338,8 @@ export function useDashboardData(issueFilter: IssueFilter) {
     setIssueBody,
     prDiff,
     fileText,
+    projects,
+    activeProject,
     issues,
     milestones,
     prs,

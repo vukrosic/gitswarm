@@ -1,4 +1,4 @@
-import type { Agent, FileEntry, GridSession, Issue, Milestone, PullRequest, PtyStreamResult, PtySession, RunningWorktree, Snapshot, Worktree } from '../types';
+import type { Agent, FileEntry, GridSession, Issue, Milestone, Project, PullRequest, PtyStreamResult, PtySession, RunningWorktree, Snapshot, Worktree } from '../types';
 
 type JsonInit = RequestInit & { json?: unknown };
 
@@ -48,10 +48,11 @@ export async function fetchNotifications(allRead = false, reason = 'owner') {
 }
 
 export async function fetchSnapshot(): Promise<Snapshot> {
-  const [issues, milestones, prs, worktrees, files, ptys, agents] = await Promise.all([
+  const [issues, milestones, prs, projects, worktrees, files, ptys, agents] = await Promise.all([
     requestJson<{ issues: Issue[] }>('/api/issues'),
     requestJson<{ milestones: Milestone[] }>('/api/milestones'),
     requestJson<{ prs: PullRequest[] }>('/api/prs'),
+    requestJson<{ active: string; projects: Project[] }>('/api/projects'),
     requestJson<{ worktrees: Worktree[]; running?: RunningWorktree[] }>('/api/worktrees'),
     requestJson<{ files: FileEntry[] }>('/api/files'),
     requestJson<{ sessions: PtySession[] }>('/api/pty/list'),
@@ -64,6 +65,11 @@ export async function fetchSnapshot(): Promise<Snapshot> {
     issues: issues.issues || [],
     milestones: milestones.milestones || [],
     prs: prs.prs || [],
+    projects: (projects.projects || []).map((project) => ({
+      ...project,
+      active: !!project.active,
+    })),
+    activeProject: (projects.projects || []).find((project) => project.active) || null,
     worktrees: (worktrees.worktrees || []).map((worktree) => {
       const running = runningNames.get(worktree.name);
       return {
@@ -80,6 +86,20 @@ export async function fetchSnapshot(): Promise<Snapshot> {
     codeMtime: agents.code_mtime || 0,
     codeMtimePath: agents.code_mtime_path || '',
   };
+}
+
+export function addProject(repoRoot: string, label = '') {
+  return requestJson<{ project: Project; projects: { active: string; projects: Project[] } }>('/api/projects/add', {
+    method: 'POST',
+    json: { repo_root: repoRoot, label },
+  });
+}
+
+export function activateProject(projectId: string) {
+  return requestJson<{ project: Project; projects: { active: string; projects: Project[] } }>('/api/projects/activate', {
+    method: 'POST',
+    json: { project_id: projectId },
+  });
 }
 
 export function fetchIssue(number: number) {
