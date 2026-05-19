@@ -1,4 +1,4 @@
-import type { Agent, FileEntry, GitHubNotification, Issue, Milestone, PullRequest, PtySession, Snapshot, Worktree } from '../types';
+import type { FileEntry, GitHubNotification, Issue, Milestone, PullRequest, PtySession, Snapshot, Worktree } from '../types';
 import type { Pane } from '../types/dashboard';
 import { FilePane } from './FilePane';
 import { IssuePane } from './IssuePane';
@@ -31,7 +31,6 @@ interface MainContentProps {
   fileText: string;
   ptyText: string;
   ptyStream: PtyStreamState;
-  agents: Agent[];
   selectedAgent: string;
   issueTitle: string;
   issueDraftBody: string;
@@ -42,6 +41,8 @@ interface MainContentProps {
   onIssueTitleChange: (value: string) => void;
   onIssueDraftBodyChange: (value: string) => void;
   onLaunchTextChange: (value: string) => void;
+  onOpenIssueCreator: () => void;
+  onCreateIssue: () => void;
   onClaimIssue: (issue: Issue) => void;
   onReviewIssue: (issue: Issue) => void;
   onSaveIssue: (issue: Issue) => void;
@@ -57,12 +58,9 @@ interface MainContentProps {
   onDeletePty: (pty: PtySession) => void;
   onWorktreeShell: (worktree: Worktree) => void;
   onWorktreeRemove: (worktree: Worktree) => void;
-  onNewShell: () => void;
-  onAgentShell: () => void;
   onPropose: () => void;
   onAuditCleanup: () => void;
   onPruneCleanup: () => void;
-  onCreateIssue: () => void;
   onBatchReview: () => void;
   onBatchClaimNext: () => void;
   onPruneMerged: () => void;
@@ -86,7 +84,6 @@ export function MainContent(props: MainContentProps) {
     fileText,
     ptyText,
     ptyStream,
-    agents,
     selectedAgent,
     issueTitle,
     issueDraftBody,
@@ -98,6 +95,8 @@ export function MainContent(props: MainContentProps) {
     onIssueTitleChange,
     onIssueDraftBodyChange,
     onLaunchTextChange,
+    onOpenIssueCreator,
+    onCreateIssue,
     onClaimIssue,
     onReviewIssue,
     onSaveIssue,
@@ -113,12 +112,9 @@ export function MainContent(props: MainContentProps) {
     onDeletePty,
     onWorktreeShell,
     onWorktreeRemove,
-    onNewShell,
-    onAgentShell,
     onPropose,
     onAuditCleanup,
     onPruneCleanup,
-    onCreateIssue,
     onBatchReview,
     onBatchClaimNext,
     onPruneMerged,
@@ -141,6 +137,7 @@ export function MainContent(props: MainContentProps) {
           issue={selectedIssue}
           body={issueBody}
           onBodyChange={onIssueBodyChange}
+          onOpenIssueCreator={onOpenIssueCreator}
           onClaim={() => onClaimIssue(selectedIssue)}
           onReview={() => onReviewIssue(selectedIssue)}
           onSave={() => onSaveIssue(selectedIssue)}
@@ -191,7 +188,6 @@ export function MainContent(props: MainContentProps) {
       {pane === 'files' && selectedFile ? <FilePane file={selectedFile} text={fileText} /> : null}
       {pane === 'launch' ? (
         <LaunchPane
-          agents={agents}
           selectedAgent={selectedAgent}
           issueTitle={issueTitle}
           issueBody={issueDraftBody}
@@ -199,8 +195,6 @@ export function MainContent(props: MainContentProps) {
           onIssueTitleChange={onIssueTitleChange}
           onIssueBodyChange={onIssueDraftBodyChange}
           onLaunchTextChange={onLaunchTextChange}
-          onNewShell={onNewShell}
-          onAgentShell={onAgentShell}
           onPropose={onPropose}
           onAuditCleanup={onAuditCleanup}
           onPruneCleanup={onPruneCleanup}

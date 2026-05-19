@@ -296,6 +296,18 @@ export function useDashboardData(issueFilter: IssueFilter) {
     return items.sort((a, b) => b.ts - a.ts).slice(0, 8);
   }, [issues, prs, ptys]);
 
+  function prependIssue(issue: Issue) {
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      const nextIssue = { ...issue };
+      const others = prev.issues.filter((it) => it.number !== nextIssue.number);
+      return {
+        ...prev,
+        issues: [nextIssue, ...others],
+      };
+    });
+  }
+
   return {
     snapshot,
     loading,
@@ -326,5 +338,6 @@ export function useDashboardData(issueFilter: IssueFilter) {
     selectedFile,
     counts,
     recentActivity,
+    prependIssue,
   };
 }

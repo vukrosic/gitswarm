@@ -77,6 +77,7 @@ export default function App() {
     selectedWorktree,
     selectedFile,
     counts,
+    prependIssue,
   } = dashboard;
   const ptyStream = usePtyStream(selectedPty?.sid || '');
   const dockPty = dockPtyId
@@ -132,11 +133,13 @@ export default function App() {
     }
   }, [agents, defaultAgent, selectedAgent]);
 
-  async function run<T>(label: string, fn: () => Promise<T>) {
+  async function run<T>(label: string, fn: () => Promise<T>, reload = true) {
     setBusy(label);
     try {
       const res = await fn();
-      await load();
+      if (reload) {
+        await load();
+      }
       return res;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -380,15 +383,37 @@ export default function App() {
   async function handleCreateIssue() {
     const title = issueTitle.trim();
     if (!title) return;
+    const body = issueDraftBody;
     const result = await run('create issue', async () => {
-      return createIssue(title, issueDraftBody) as Promise<{ number?: number }>;
-    });
+      return createIssue(title, issueDraftBody) as Promise<{ number?: number; url?: string }>;
+    }, false);
     if (result && typeof result === 'object' && result.number) {
+      const createdAt = new Date().toISOString();
+      prependIssue({
+        number: result.number,
+        title,
+        body,
+        state: 'open',
+        assignees: [],
+        created_at: createdAt,
+        updated_at: createdAt,
+        in_progress: false,
+        labels: [],
+        comment_count: 0,
+        comments: [],
+        milestone: null,
+        url: result.url || undefined,
+      });
       setPane('issues');
       setIssueTitle('');
       setIssueDraftBody('');
       setSelection({ kind: 'issue', id: result.number });
+      void load();
     }
+  }
+
+  function handleOpenIssueCreator() {
+    setPane('launch');
   }
 
   async function handleBatchReviewVisible() {
@@ -442,6 +467,7 @@ export default function App() {
           <>
             <button onClick={() => void handleBatchReviewVisible()}>Batch review</button>
             <button onClick={() => void handleBatchClaimNext()}>Batch claim-next</button>
+            <button onClick={() => handleOpenIssueCreator()}>New issue</button>
             {selectedIssueActions}
           </>
         );
@@ -579,7 +605,6 @@ export default function App() {
           fileText={fileText}
           ptyText={ptyText}
           ptyStream={ptyStream}
-          agents={agents}
           selectedAgent={selectedAgent}
           issueTitle={issueTitle}
           issueDraftBody={issueDraftBody}
@@ -589,6 +614,8 @@ export default function App() {
           onIssueTitleChange={setIssueTitle}
           onIssueDraftBodyChange={setIssueDraftBody}
           onLaunchTextChange={setLaunchText}
+          onOpenIssueCreator={() => handleOpenIssueCreator()}
+          onCreateIssue={() => void handleCreateIssue()}
           onClaimIssue={(issue) => void handleClaim(issue)}
           onReviewIssue={(issue) => void handleReviewIssue(issue)}
           onSaveIssue={(issue) => void handleEditIssue(issue)}
@@ -604,12 +631,9 @@ export default function App() {
           onDeletePty={(pty) => void handleDeletePty(pty)}
           onWorktreeShell={(worktree) => void handleWorktreeShell(worktree)}
           onWorktreeRemove={(worktree) => void handleWorktreeRemove(worktree)}
-          onNewShell={() => void handleNewShell()}
-          onAgentShell={() => void handleAgentShell()}
           onPropose={() => void handlePropose()}
           onAuditCleanup={() => void handleCleanup(true)}
           onPruneCleanup={() => void handleCleanup(false)}
-          onCreateIssue={() => void handleCreateIssue()}
           onBatchReview={() => void handleBatchReviewVisible()}
           onBatchClaimNext={() => void handleBatchClaimNext()}
           onPruneMerged={() => void handlePruneMergedWorktrees()}

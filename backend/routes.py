@@ -274,7 +274,7 @@ def _handle_pty_input(handler, payload, send_json_fn):
     data = payload.get("data", "")
     if not isinstance(data, str):
         return send_json_fn(handler, {"error": "data must be string"}, 400)
-    ok = pty_write(sid, data.encode("utf-8", errors="replace"))
+    ok = pty_write(sid, data)
     return send_json_fn(handler, {"ok": ok})
 
 

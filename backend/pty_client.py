@@ -147,6 +147,14 @@ def pty_read(sid, offset=0, timeout=20):
 
 
 def pty_write(sid, data):
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        raw = bytes(data)
+        try:
+            data = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            data = raw.decode("latin-1")
+    elif not isinstance(data, str):
+        data = str(data)
     return _request({"cmd": "write", "sid": sid, "data": data}).get("ok", False)
 
 

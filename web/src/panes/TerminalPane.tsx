@@ -1,5 +1,5 @@
 import type { PtySession } from '../types';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ago } from '../lib/time';
 import { renderTerminalText } from '../lib/terminal';
 import { Button } from '@/components/ui/button';
@@ -31,10 +31,15 @@ export function TerminalPane({
   onClose,
   onDelete,
 }: TerminalPaneProps) {
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const displayLog = useMemo(
     () => renderTerminalText(log, { rows: pty.rows || 30, cols: pty.cols || 120 }),
     [log, pty.rows, pty.cols],
   );
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [pty.sid]);
 
   return (
     <PaneShell>
@@ -52,6 +57,8 @@ export function TerminalPane({
         }
       />
       <Textarea
+        ref={inputRef}
+        autoFocus
         value={input}
         onChange={(event) => onInputChange(event.target.value)}
         onKeyDown={(event) => {

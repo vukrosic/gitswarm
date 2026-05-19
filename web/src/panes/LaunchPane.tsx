@@ -1,12 +1,9 @@
-import type { Agent } from '../types';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { PaneHeader, PaneShell } from './_shared';
 
 interface LaunchPaneProps {
-  agents: Agent[];
   selectedAgent: string;
   issueTitle: string;
   issueBody: string;
@@ -14,8 +11,6 @@ interface LaunchPaneProps {
   onIssueTitleChange: (value: string) => void;
   onIssueBodyChange: (value: string) => void;
   onLaunchTextChange: (value: string) => void;
-  onNewShell: () => void;
-  onAgentShell: () => void;
   onPropose: () => void;
   onAuditCleanup: () => void;
   onPruneCleanup: () => void;
@@ -44,7 +39,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function LaunchPane({
-  agents,
   selectedAgent,
   issueTitle,
   issueBody,
@@ -52,8 +46,6 @@ export function LaunchPane({
   onIssueTitleChange,
   onIssueBodyChange,
   onLaunchTextChange,
-  onNewShell,
-  onAgentShell,
   onPropose,
   onAuditCleanup,
   onPruneCleanup,
@@ -66,19 +58,10 @@ export function LaunchPane({
     <PaneShell>
       <PaneHeader
         eyebrow="Launchers"
-        title="Agent / shell commands"
-        actions={
-          <>
-            <Button variant="outline" size="sm" onClick={onNewShell}>New shell</Button>
-            <Button variant="primary" size="sm" onClick={onAgentShell}>Agent shell</Button>
-            <Button variant="outline" size="sm" onClick={onPropose}>Propose</Button>
-            <Button variant="outline" size="sm" onClick={onAuditCleanup}>Audit cleanup</Button>
-            <Button variant="outline" size="sm" onClick={onPruneCleanup}>Prune cleanup</Button>
-          </>
-        }
+        title="Create issue"
       />
-      <div className="grid gap-3 lg:grid-cols-3">
-        <LaunchCard title="Create issue">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)]">
+        <LaunchCard title="Write it down">
           <Field label="Title">
             <Input
               value={issueTitle}
@@ -91,7 +74,7 @@ export function LaunchPane({
               value={issueBody}
               onChange={(event) => onIssueBodyChange(event.target.value)}
               placeholder="Issue body"
-              className="min-h-[140px] resize-y"
+              className="min-h-[190px] resize-y"
             />
           </Field>
           <div className="flex justify-start">
@@ -99,26 +82,20 @@ export function LaunchPane({
           </div>
         </LaunchCard>
 
-        <LaunchCard title="Batch ops">
-          <Field label="Prompt / slug">
-            <Input value={launchText} onChange={(event) => onLaunchTextChange(event.target.value)} />
-          </Field>
-          <div className="flex flex-wrap gap-1.5">
-            <Button variant="outline" size="sm" onClick={onBatchReview}>Batch review</Button>
-            <Button variant="outline" size="sm" onClick={onBatchClaimNext}>Batch claim-next</Button>
-            <Button variant="outline" size="sm" onClick={onPruneMerged}>Prune merged</Button>
-          </div>
-          <div className="text-[11px] text-muted-foreground">Selected agent: {selectedAgent}</div>
-        </LaunchCard>
-
-        <LaunchCard title="Agent status">
-          <div className="flex flex-wrap gap-1.5">
-            {agents.map((agent) => (
-              <Badge key={agent.id} variant={agent.available ? 'success' : 'destructive'}>
-                {agent.label}
-                {agent.available ? '' : ' · missing'}
-              </Badge>
-            ))}
+        <LaunchCard title="Advanced">
+          <div className="space-y-3">
+            <Field label="Prompt / slug">
+              <Input value={launchText} onChange={(event) => onLaunchTextChange(event.target.value)} />
+            </Field>
+            <div className="flex flex-wrap gap-1.5">
+              <Button variant="outline" size="sm" onClick={onPropose}>Propose</Button>
+              <Button variant="outline" size="sm" onClick={onAuditCleanup}>Audit cleanup</Button>
+              <Button variant="outline" size="sm" onClick={onPruneCleanup}>Prune cleanup</Button>
+              <Button variant="outline" size="sm" onClick={onBatchReview}>Batch review</Button>
+              <Button variant="outline" size="sm" onClick={onBatchClaimNext}>Batch claim-next</Button>
+              <Button variant="outline" size="sm" onClick={onPruneMerged}>Prune merged</Button>
+            </div>
+            <div className="text-[11px] text-muted-foreground">Selected agent: {selectedAgent}</div>
           </div>
         </LaunchCard>
       </div>

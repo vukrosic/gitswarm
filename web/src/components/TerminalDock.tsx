@@ -7,6 +7,7 @@ import { ago } from '../lib/time';
 import { sessionLabel } from '../lib/labels';
 import { renderTerminalText } from '../lib/terminal';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
 interface TerminalDockProps {
@@ -72,6 +73,7 @@ export function TerminalDock({
   onType,
 }: TerminalDockProps) {
   const terminalRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const outputRef = useRef<HTMLPreElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastResizeRef = useRef('');
@@ -81,13 +83,47 @@ export function TerminalDock({
   });
   const [renamingSid, setRenamingSid] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const focusTerminal = () => {
+    terminalRef.current?.focus();
+    inputRef.current?.focus();
+  };
+  const captureKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!pty) return;
+    if (event.ctrlKey && event.key.toLowerCase() === 'c') {
+      event.preventDefault();
+      onType('\u0003');
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onType(event.shiftKey ? '\n' : '\r');
+      return;
+    }
+    if (event.key === 'Backspace') {
+      event.preventDefault();
+      onType('\u007f');
+      return;
+    }
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      onType('\t');
+      return;
+    }
+    if (event.key.length === 1 && !event.metaKey && !event.altKey && !event.ctrlKey) {
+      event.preventDefault();
+      onType(event.key);
+    }
+  };
   const displayLog = useMemo(
     () => renderTerminalText(log, terminalSize),
     [log, terminalSize.rows, terminalSize.cols],
   );
 
   useEffect(() => {
-    if (pty && !collapsed) terminalRef.current?.focus();
+    if (pty && !collapsed) {
+      terminalRef.current?.focus();
+      inputRef.current?.focus();
+    }
   }, [pty?.sid, collapsed]);
 
   useEffect(() => {
@@ -136,35 +172,7 @@ export function TerminalDock({
     output.scrollTop = output.scrollHeight;
   }, [displayLog]);
 
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (!pty) return;
-    if (event.ctrlKey && event.key.toLowerCase() === 'c') {
-      event.preventDefault();
-      onType('');
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onType(event.shiftKey ? '\n' : '\r');
-      return;
-    }
-    if (event.key === 'Backspace') {
-      event.preventDefault();
-      onType('');
-      return;
-    }
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      onType('\t');
-      return;
-    }
-    if (event.key.length === 1 && !event.metaKey && !event.altKey && !event.ctrlKey) {
-      event.preventDefault();
-      onType(event.key);
-    }
-  }
-
-  function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     if (!pty) return;
     const text = event.clipboardData.getData('text');
     if (!text) return;
@@ -333,12 +341,6 @@ export function TerminalDock({
             {pty ? (
               <div
                 ref={terminalRef}
-                tabIndex={0}
-                role="textbox"
-                aria-multiline="true"
-                aria-label="Manual terminal input"
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
                 className="flex min-h-0 flex-1 cursor-text flex-col gap-2 overflow-hidden rounded-2xl border border-border bg-background/80 p-3 outline-none transition-colors focus-visible:border-primary/70 focus-visible:shadow-[0_0_0_2px_hsl(var(--primary)/0.16)]"
               >
                 <pre
@@ -348,9 +350,19 @@ export function TerminalDock({
                 >
                   {displayLog || 'Waiting for output...'}
                 </pre>
-                <div className="text-[11px] text-muted-foreground">
-                  Click here and type. Enter sends, Shift+Enter for newline, Ctrl-C interrupts.
-                </div>
+                <Textarea
+                  ref={inputRef}
+                  readOnly
+                  value=""
+                  aria-label="Manual terminal input"
+                  onFocus={focusTerminal}
+                  onMouseDown={focusTerminal}
+                  onKeyDown={captureKeyDown}
+                  onPaste={handlePaste}
+                  onClick={focusTerminal}
+                  className="min-h-[56px] resize-none border-border/70 bg-background/75 font-mono text-[12px] text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-primary/30"
+                  placeholder="Click here and type. Enter sends, Shift+Enter for newline, Ctrl-C interrupts."
+                />
                 <div className="text-[11px] text-muted-foreground">
                   offset {offset} · {alive ? 'streaming' : 'stopped'}
                 </div>

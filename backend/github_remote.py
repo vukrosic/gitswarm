@@ -1,6 +1,7 @@
 """GitHub CLI/API helpers for issues and pull requests."""
 import json
 import re
+import shutil
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -12,6 +13,7 @@ STATE_DIR = None
 
 _ISSUES_CACHE = {"ts": 0, "data": None}
 _PRS_CACHE = {"ts": 0, "data": None}
+_MILESTONES_CACHE = {"ts": 0, "data": None}
 _NOTIFS_CACHE = {"ts": 0, "data": None}
 
 # Per-issue / per-PR detail caches. Keyed by int issue/pr number. Used to make
@@ -25,6 +27,9 @@ _PR_META_TTL = 30
 _SLUG_CACHE = {"ts": 0, "value": ""}
 _SLUG_TTL = 300
 
+_CACHE_VERSION = 1
+_CACHE_DIR_NAME = ".gh-cache"
+
 _DETAIL_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="gh-detail")
 
 
@@ -32,6 +37,72 @@ def init(repo_root: Path, state_dir: Path):
     global REPO_ROOT, STATE_DIR
     REPO_ROOT = repo_root
     STATE_DIR = state_dir
+
+
+def _cache_dir():
+    if STATE_DIR is None:
+        return None
+    return STATE_DIR / _CACHE_DIR_NAME
+
+
+def _cache_name(*parts):
+    tokens = []
+    for part in parts:
+        text = str(part)
+        tokens.append(re.sub(r"[^A-Za-z0-9_.-]+", "_", text))
+    return "-".join(tokens)
+
+
+def _cache_path(*parts):
+    cache_dir = _cache_dir()
+    if cache_dir is None:
+        return None
+    return cache_dir / f"{_cache_name(*parts)}.json"
+
+
+def _read_cache(*parts):
+    path = _cache_path(*parts)
+    if path is None or not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text())
+    except Exception:
+        return None
+    if not isinstance(raw, dict) or raw.get("version") != _CACHE_VERSION:
+        return None
+    return {"ts": float(raw.get("ts") or 0), "data": raw.get("data")}
+
+
+def _write_cache(data, *parts, ts=None):
+    path = _cache_path(*parts)
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": _CACHE_VERSION,
+            "ts": ts if ts is not None else time.time(),
+            "data": data,
+        }
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False))
+        tmp.replace(path)
+    except Exception:
+        pass
+
+
+def _clear_disk_cache():
+    cache_dir = _cache_dir()
+    if cache_dir is None:
+        return
+    shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _cache_hit(cache, ttl):
+    cached = cache.get("data")
+    if cached is None:
+        return False
+    return time.time() - cache.get("ts", 0) < ttl
 
 
 def _text_preview(text, limit=180):

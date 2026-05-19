@@ -7,6 +7,7 @@ interface IssuePaneProps {
   issue: Issue;
   body: string;
   onBodyChange: (body: string) => void;
+  onOpenIssueCreator: () => void;
   onClaim: () => void;
   onReview: () => void;
   onSave: () => void;
@@ -28,7 +29,16 @@ function CommentBlock({ comment }: { comment: GitHubComment }) {
   );
 }
 
-export function IssuePane({ issue, body, onBodyChange: _onBodyChange, onClaim, onReview, onSave, onDelete }: IssuePaneProps) {
+export function IssuePane({
+  issue,
+  body,
+  onBodyChange: _onBodyChange,
+  onOpenIssueCreator,
+  onClaim,
+  onReview,
+  onSave,
+  onDelete,
+}: IssuePaneProps) {
   const comments = issue.comments || [];
   return (
     <PaneShell className="min-w-0">
@@ -46,6 +56,7 @@ export function IssuePane({ issue, body, onBodyChange: _onBodyChange, onClaim, o
         ].filter(Boolean) as string[]}
         actions={
           <>
+            <Button variant="outline" size="sm" onClick={onOpenIssueCreator}>New issue</Button>
             <Button
               variant="primary"
               size="sm"
