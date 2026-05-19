@@ -1,5 +1,10 @@
 """Tests for github_remote — GH API helpers and normalization."""
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import patch
 
 import github as gh_mod
 from backend import github_remote as gr_mod
@@ -175,6 +180,83 @@ class ReviewerVerdictTests(unittest.TestCase):
     def test_maps_reject_to_request_changes(self):
         text = "# Reviewer-agent verdict\n**Verdict:** reject\n"
         self.assertEqual(gh_mod.review_verdict_mode(text), "request-changes")
+
+
+class LocalCacheTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        gr_mod.init(root, root / ".gitswarm" / "state")
+        gr_mod.invalidate_caches()
+
+    def _set_subprocess_run(self, payload, expected_args_prefix):
+        def fake_run(args, capture_output=False, text=False, timeout=None, check=None):
+            if args[:len(expected_args_prefix)] != expected_args_prefix:
+                raise AssertionError(f"unexpected command: {args}")
+            return CompletedProcess(args, 0, stdout=json.dumps(payload), stderr="")
+        return fake_run
+
+    def test_list_issues_uses_disk_cache_on_cold_start(self):
+        payload = [
+            {
+                "number": 7,
+                "title": "cached issue",
+                "body": "body text",
+                "labels": [],
+                "url": "https://example.com/issues/7",
+                "author": {"login": "alice"},
+                "assignees": [],
+                "comments": [],
+                "createdAt": "2025-01-01T00:00:00Z",
+                "updatedAt": "2025-01-02T00:00:00Z",
+                "state": "OPEN",
+                "milestone": None,
+            }
+        ]
+        with patch.object(gr_mod.subprocess, "run", side_effect=self._set_subprocess_run(payload, ["gh", "issue", "list"])):
+            first = gr_mod.list_issues()
+        self.assertEqual(first[0]["number"], 7)
+        cache_file = Path(self.tmp.name) / ".gitswarm" / "state" / ".gh-cache" / "issues.json"
+        self.assertTrue(cache_file.exists())
+
+        gr_mod._ISSUES_CACHE = {"ts": 0, "data": None}
+        with patch.object(gr_mod.subprocess, "run", side_effect=AssertionError("should not hit gh again")):
+            second = gr_mod.list_issues()
+        self.assertEqual(second[0]["number"], 7)
+        self.assertEqual(second[0]["summary"], "body text")
+
+    def test_list_prs_uses_disk_cache_on_cold_start(self):
+        payload = [
+            {
+                "number": 12,
+                "title": "cached pr",
+                "body": "PR body",
+                "isDraft": False,
+                "headRefName": "feature",
+                "baseRefName": "main",
+                "url": "https://example.com/pull/12",
+                "reviewDecision": "",
+                "mergeable": "MERGEABLE",
+                "labels": [],
+                "statusCheckRollup": [],
+                "comments": [],
+                "author": {"login": "bob"},
+                "createdAt": "2025-01-01T00:00:00Z",
+                "updatedAt": "2025-01-02T00:00:00Z",
+            }
+        ]
+        with patch.object(gr_mod.subprocess, "run", side_effect=self._set_subprocess_run(payload, ["gh", "pr", "list"])):
+            first = gr_mod.list_prs()
+        self.assertEqual(first[0]["number"], 12)
+        cache_file = Path(self.tmp.name) / ".gitswarm" / "state" / ".gh-cache" / "prs.json"
+        self.assertTrue(cache_file.exists())
+
+        gr_mod._PRS_CACHE = {"ts": 0, "data": None}
+        with patch.object(gr_mod.subprocess, "run", side_effect=AssertionError("should not hit gh again")):
+            second = gr_mod.list_prs()
+        self.assertEqual(second[0]["number"], 12)
+        self.assertEqual(second[0]["summary"], "PR body")
 
 
 if __name__ == "__main__":

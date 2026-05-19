@@ -8,6 +8,7 @@ interface LaunchPaneProps {
   issueTitle: string;
   issueBody: string;
   launchText: string;
+  busy: string;
   onIssueTitleChange: (value: string) => void;
   onIssueBodyChange: (value: string) => void;
   onLaunchTextChange: (value: string) => void;
@@ -43,6 +44,7 @@ export function LaunchPane({
   issueTitle,
   issueBody,
   launchText,
+  busy,
   onIssueTitleChange,
   onIssueBodyChange,
   onLaunchTextChange,
@@ -54,6 +56,13 @@ export function LaunchPane({
   onBatchClaimNext,
   onPruneMerged,
 }: LaunchPaneProps) {
+  const createLoading = busy === 'create issue';
+  const proposeLoading = busy === 'propose';
+  const auditLoading = busy === 'cleanup audit';
+  const pruneLoading = busy === 'cleanup prune';
+  const batchReviewLoading = busy === 'batch review' || busy.startsWith('review #');
+  const batchClaimLoading = busy === 'batch claim-next' || busy.startsWith('claim #');
+  const pruneMergedLoading = busy === 'prune merged worktrees';
   return (
     <PaneShell>
       <PaneHeader
@@ -78,7 +87,9 @@ export function LaunchPane({
             />
           </Field>
           <div className="flex justify-start">
-            <Button variant="primary" size="sm" onClick={onCreateIssue}>Create issue</Button>
+            <Button variant="primary" size="sm" onClick={onCreateIssue} loading={createLoading} disabled={!!busy}>
+              Create issue
+            </Button>
           </div>
         </LaunchCard>
 
@@ -88,12 +99,24 @@ export function LaunchPane({
               <Input value={launchText} onChange={(event) => onLaunchTextChange(event.target.value)} />
             </Field>
             <div className="flex flex-wrap gap-1.5">
-              <Button variant="outline" size="sm" onClick={onPropose}>Propose</Button>
-              <Button variant="outline" size="sm" onClick={onAuditCleanup}>Audit cleanup</Button>
-              <Button variant="outline" size="sm" onClick={onPruneCleanup}>Prune cleanup</Button>
-              <Button variant="outline" size="sm" onClick={onBatchReview}>Batch review</Button>
-              <Button variant="outline" size="sm" onClick={onBatchClaimNext}>Batch claim-next</Button>
-              <Button variant="outline" size="sm" onClick={onPruneMerged}>Prune merged</Button>
+              <Button variant="outline" size="sm" onClick={onPropose} loading={proposeLoading} disabled={!!busy}>
+                Propose
+              </Button>
+              <Button variant="outline" size="sm" onClick={onAuditCleanup} loading={auditLoading} disabled={!!busy}>
+                Audit cleanup
+              </Button>
+              <Button variant="outline" size="sm" onClick={onPruneCleanup} loading={pruneLoading} disabled={!!busy}>
+                Prune cleanup
+              </Button>
+              <Button variant="outline" size="sm" onClick={onBatchReview} loading={batchReviewLoading} disabled={!!busy}>
+                Batch review
+              </Button>
+              <Button variant="outline" size="sm" onClick={onBatchClaimNext} loading={batchClaimLoading} disabled={!!busy}>
+                Batch claim-next
+              </Button>
+              <Button variant="outline" size="sm" onClick={onPruneMerged} loading={pruneMergedLoading} disabled={!!busy}>
+                Prune merged
+              </Button>
             </div>
             <div className="text-[11px] text-muted-foreground">Selected agent: {selectedAgent}</div>
           </div>

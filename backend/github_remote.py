@@ -1,8 +1,8 @@
 """GitHub CLI/API helpers for issues and pull requests."""
 import json
 import re
-import shutil
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -23,6 +23,10 @@ _ISSUE_META_CACHE = {}   # {num: {"ts": float, "data": dict}}
 _PR_META_CACHE = {}      # {num: {"ts": float, "data": dict}}
 _ISSUE_META_TTL = 30
 _PR_META_TTL = 30
+_PR_DIFF_CACHE = {}      # {num: {"ts": float, "data": str}}
+_PR_DIFF_TTL = 120
+_PR_CI_CACHE = {}        # {num: {"ts": float, "data": dict}}
+_PR_CI_TTL = 60
 
 _SLUG_CACHE = {"ts": 0, "value": ""}
 _SLUG_TTL = 300
@@ -31,6 +35,31 @@ _CACHE_VERSION = 1
 _CACHE_DIR_NAME = ".gh-cache"
 
 _DETAIL_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="gh-detail")
+
+# Stale-while-revalidate plumbing. When a cached entry is past its TTL we
+# return it immediately and kick off a background refresh — but only one
+# refresh per key may be in flight at a time, otherwise the 4s snapshot
+# poll would queue up redundant `gh` calls.
+_INFLIGHT_LOCK = threading.Lock()
+_INFLIGHT = set()
+
+
+def _trigger_bg_refresh(key, refresh_fn):
+    with _INFLIGHT_LOCK:
+        if key in _INFLIGHT:
+            return
+        _INFLIGHT.add(key)
+
+    def run():
+        try:
+            refresh_fn()
+        except Exception:
+            pass
+        finally:
+            with _INFLIGHT_LOCK:
+                _INFLIGHT.discard(key)
+
+    _DETAIL_EXECUTOR.submit(run)
 
 
 def init(repo_root: Path, state_dir: Path):
@@ -89,13 +118,6 @@ def _write_cache(data, *parts, ts=None):
         tmp.replace(path)
     except Exception:
         pass
-
-
-def _clear_disk_cache():
-    cache_dir = _cache_dir()
-    if cache_dir is None:
-        return
-    shutil.rmtree(cache_dir, ignore_errors=True)
 
 
 def _cache_hit(cache, ttl):
@@ -285,16 +307,7 @@ def _normalize_review_comment(raw):
     return comment
 
 
-def fetch_pr_meta(pr_num: int):
-    try:
-        key = int(pr_num)
-    except (TypeError, ValueError):
-        key = pr_num
-    cached = _PR_META_CACHE.get(key)
-    now = time.time()
-    if cached and now - cached["ts"] < _PR_META_TTL:
-        return cached["data"]
-
+def _fetch_pr_meta_remote(pr_num, key):
     slug = github_repo_slug()
     # All four GitHub API calls are independent — fan out in parallel.
     # Total wall-clock drops from sum(~4 × 800ms) ≈ 3.2s to max ≈ 1s.
@@ -358,8 +371,32 @@ def fetch_pr_meta(pr_num: int):
         ]
     except Exception:
         pass
-    _PR_META_CACHE[key] = {"ts": now, "data": meta}
+    _PR_META_CACHE[key] = {"ts": time.time(), "data": meta}
+    _write_cache(meta, "pr-meta", key, ts=_PR_META_CACHE[key]["ts"])
     return meta
+
+
+def fetch_pr_meta(pr_num: int):
+    try:
+        key = int(pr_num)
+    except (TypeError, ValueError):
+        key = pr_num
+    cached = _PR_META_CACHE.get(key)
+    now = time.time()
+    if cached and now - cached["ts"] < _PR_META_TTL:
+        return cached["data"]
+    if key not in _PR_META_CACHE:
+        disk = _read_cache("pr-meta", key)
+        if disk and disk.get("data") is not None:
+            _PR_META_CACHE[key] = disk
+    cached = _PR_META_CACHE.get(key)
+    if cached and cached.get("data") is not None:
+        _trigger_bg_refresh(
+            ("pr-meta", key),
+            lambda: _fetch_pr_meta_remote(pr_num, key),
+        )
+        return cached["data"]
+    return _fetch_pr_meta_remote(pr_num, key)
 
 
 def invalidate_pr_meta(pr_num=None):
@@ -372,18 +409,7 @@ def invalidate_pr_meta(pr_num=None):
         _PR_META_CACHE.pop(pr_num, None)
 
 
-def fetch_issue_meta(issue_num):
-    # Short-TTL cache: re-selecting the same issue within ~30s skips the
-    # 1-2s round-trip entirely and feels instant in the dashboard.
-    try:
-        key = int(issue_num)
-    except (TypeError, ValueError):
-        key = issue_num
-    cached = _ISSUE_META_CACHE.get(key)
-    now = time.time()
-    if cached and now - cached["ts"] < _ISSUE_META_TTL:
-        return cached["data"]
-
+def _fetch_issue_meta_remote(issue_num, key):
     slug = github_repo_slug()
     # The two gh API calls are independent — run them in parallel so the user
     # waits for max(meta, comments) ~= 1s instead of the sum ~= 2s.
@@ -422,8 +448,35 @@ def fetch_issue_meta(issue_num):
         "comments": [item for item in (_normalize_comment(comment) for comment in comments) if item],
         "milestone": _normalize_milestone(raw.get("milestone")),
     }
-    _ISSUE_META_CACHE[key] = {"ts": now, "data": data}
+    _ISSUE_META_CACHE[key] = {"ts": time.time(), "data": data}
+    _write_cache(data, "issue-meta", key, ts=_ISSUE_META_CACHE[key]["ts"])
     return data
+
+
+def fetch_issue_meta(issue_num):
+    # Short-TTL cache: re-selecting the same issue within ~30s skips the
+    # 1-2s round-trip entirely. Past TTL we still serve disk cache instantly
+    # and refresh in the background, so selecting an issue never blocks.
+    try:
+        key = int(issue_num)
+    except (TypeError, ValueError):
+        key = issue_num
+    cached = _ISSUE_META_CACHE.get(key)
+    now = time.time()
+    if cached and now - cached["ts"] < _ISSUE_META_TTL:
+        return cached["data"]
+    if key not in _ISSUE_META_CACHE:
+        disk = _read_cache("issue-meta", key)
+        if disk and disk.get("data") is not None:
+            _ISSUE_META_CACHE[key] = disk
+    cached = _ISSUE_META_CACHE.get(key)
+    if cached and cached.get("data") is not None:
+        _trigger_bg_refresh(
+            ("issue-meta", key),
+            lambda: _fetch_issue_meta_remote(issue_num, key),
+        )
+        return cached["data"]
+    return _fetch_issue_meta_remote(issue_num, key)
 
 
 def invalidate_issue_meta(issue_num=None):
@@ -485,11 +538,11 @@ def create_issue(title: str, body: str = ""):
         return {"error": gh_error(e)}
 
 
-def fetch_pr_diff(pr_num: int):
+def _fetch_pr_diff_remote(pr_num, key):
     slug = github_repo_slug()
     path = f"repos/{slug}/pulls/{pr_num}"
     try:
-        return gh_api_text(
+        diff = gh_api_text(
             path,
             headers=["Accept: application/vnd.github.v3.diff"],
             timeout=30,
@@ -497,12 +550,36 @@ def fetch_pr_diff(pr_num: int):
         )
     except Exception as rest_err:
         try:
-            return run_gh(["pr", "diff", str(pr_num)], timeout=30, retries=1)
+            diff = run_gh(["pr", "diff", str(pr_num)], timeout=30, retries=1)
         except Exception as diff_err:
             raise RuntimeError(f"REST diff failed: {gh_error(rest_err)}; gh pr diff failed: {gh_error(diff_err)}")
+    ts = time.time()
+    _PR_DIFF_CACHE[key] = {"ts": ts, "data": diff}
+    _write_cache(diff, "pr-diff", key, ts=ts)
+    return diff
 
 
-def fetch_pr_ci_status(pr_num: int):
+def fetch_pr_diff(pr_num: int):
+    try:
+        key = int(pr_num)
+    except (TypeError, ValueError):
+        key = pr_num
+    cached = _PR_DIFF_CACHE.get(key)
+    now = time.time()
+    if cached and now - cached["ts"] < _PR_DIFF_TTL:
+        return cached["data"]
+    if key not in _PR_DIFF_CACHE:
+        disk = _read_cache("pr-diff", key)
+        if disk and disk.get("data") is not None:
+            _PR_DIFF_CACHE[key] = disk
+    cached = _PR_DIFF_CACHE.get(key)
+    if cached and cached.get("data") is not None:
+        _trigger_bg_refresh(("pr-diff", key), lambda: _fetch_pr_diff_remote(pr_num, key))
+        return cached["data"]
+    return _fetch_pr_diff_remote(pr_num, key)
+
+
+def _fetch_pr_ci_remote(pr_num, key):
     slug = github_repo_slug()
     raw = gh_api_json(f"repos/{slug}/pulls/{pr_num}", timeout=15, retries=2)
     checks = raw.get("statusCheckRollup") or []
@@ -519,56 +596,115 @@ def fetch_pr_ci_status(pr_num: int):
         else:
             status = "unknown"
         out.append({"name": name, "status": status})
-    return {"number": pr_num, "checks": out}
+    result = {"number": pr_num, "checks": out}
+    ts = time.time()
+    _PR_CI_CACHE[key] = {"ts": ts, "data": result}
+    _write_cache(result, "pr-ci", key, ts=ts)
+    return result
+
+
+def fetch_pr_ci_status(pr_num: int):
+    try:
+        key = int(pr_num)
+    except (TypeError, ValueError):
+        key = pr_num
+    cached = _PR_CI_CACHE.get(key)
+    now = time.time()
+    if cached and now - cached["ts"] < _PR_CI_TTL:
+        return cached["data"]
+    if key not in _PR_CI_CACHE:
+        disk = _read_cache("pr-ci", key)
+        if disk and disk.get("data") is not None:
+            _PR_CI_CACHE[key] = disk
+    cached = _PR_CI_CACHE.get(key)
+    if cached and cached.get("data") is not None:
+        _trigger_bg_refresh(("pr-ci", key), lambda: _fetch_pr_ci_remote(pr_num, key))
+        return cached["data"]
+    return _fetch_pr_ci_remote(pr_num, key)
+
+
+def _fetch_issues_remote():
+    out = subprocess.run(
+        ["gh", "issue", "list", "--state", "open",
+         "--limit", "100", "--json", "number,title,body,labels,url,author,assignees,comments,createdAt,updatedAt,state,milestone"],
+        capture_output=True, text=True, timeout=20, check=True,
+    ).stdout
+    issues = json.loads(out)
+    for it in issues:
+        it["labels"] = [l["name"] for l in it.get("labels", [])]
+        it["assignees"] = [a.get("login") for a in it.get("assignees", []) if a.get("login")]
+        it["in_progress"] = "in-progress" in it["labels"]
+        it["claim_next"] = "claim-next" in it["labels"]
+        it["parked"] = "needs-validation" in it["labels"]
+        it["body"] = it.get("body") or ""
+        it["milestone"] = _normalize_milestone(it.get("milestone"))
+        it["summary"] = _text_preview(it["body"], 180) or "no body yet"
+        it["suggested_labels"] = _issue_label_suggestions(it.get("title") or "", it["body"])
+        author = it.get("author") or {}
+        it["author"] = author.get("login") if isinstance(author, dict) else ""
+        raw_comments = it.get("comments") or []
+        it["comment_count"] = len(raw_comments) if isinstance(raw_comments, list) else 0
+        it.pop("comments", None)
+    ts = time.time()
+    _ISSUES_CACHE.update({"ts": ts, "data": issues})
+    _write_cache(issues, "issues", ts=ts)
+    return issues
 
 
 def list_issues():
-    if _ISSUES_CACHE["data"] and time.time() - _ISSUES_CACHE["ts"] < 20:
+    # Fast path: fresh in-memory cache.
+    if _cache_hit(_ISSUES_CACHE, 20):
         return _ISSUES_CACHE["data"]
+    # Hydrate memory from disk on first call after server start.
+    if _ISSUES_CACHE.get("data") is None:
+        disk = _read_cache("issues")
+        if disk and disk.get("data") is not None:
+            _ISSUES_CACHE.update(disk)
+    # SWR: serve whatever we have (even if past TTL) and refresh in the
+    # background. The 4s snapshot poll picks up the fresh data on the next
+    # tick — never blocks the dashboard load.
+    if _ISSUES_CACHE.get("data") is not None:
+        _trigger_bg_refresh("issues", _fetch_issues_remote)
+        return _ISSUES_CACHE["data"]
+    # Cold start with no disk cache: must block.
     try:
-        out = subprocess.run(
-            ["gh", "issue", "list", "--state", "open",
-             "--limit", "100", "--json", "number,title,body,labels,url,author,assignees,comments,createdAt,updatedAt,state,milestone"],
-            capture_output=True, text=True, timeout=20, check=True,
-        ).stdout
-        issues = json.loads(out)
-        for it in issues:
-            it["labels"] = [l["name"] for l in it.get("labels", [])]
-            it["assignees"] = [a.get("login") for a in it.get("assignees", []) if a.get("login")]
-            it["in_progress"] = "in-progress" in it["labels"]
-            it["claim_next"] = "claim-next" in it["labels"]
-            it["parked"] = "needs-validation" in it["labels"]
-            it["body"] = it.get("body") or ""
-            it["milestone"] = _normalize_milestone(it.get("milestone"))
-            it["summary"] = _text_preview(it["body"], 180) or "no body yet"
-            it["suggested_labels"] = _issue_label_suggestions(it.get("title") or "", it["body"])
-            author = it.get("author") or {}
-            it["author"] = author.get("login") if isinstance(author, dict) else ""
-            raw_comments = it.get("comments") or []
-            it["comment_count"] = len(raw_comments) if isinstance(raw_comments, list) else 0
-            it.pop("comments", None)
-        _ISSUES_CACHE.update({"ts": time.time(), "data": issues})
-        return issues
+        return _fetch_issues_remote()
     except Exception as e:
         return [{"error": str(e)}]
 
 
+def _fetch_milestones_remote():
+    slug = github_repo_slug()
+    raw = gh_api_json(f"repos/{slug}/milestones?state=all&per_page=100", timeout=20, retries=2)
+    milestones = []
+    for item in raw if isinstance(raw, list) else []:
+        milestone = _normalize_milestone(item)
+        if milestone:
+            milestones.append(milestone)
+    milestones.sort(key=lambda item: (
+        0 if item.get("state") == "open" else 1,
+        item.get("due_on") or "9999-12-31T23:59:59Z",
+        item.get("number") or 0,
+        item.get("title") or "",
+    ))
+    ts = time.time()
+    _MILESTONES_CACHE.update({"ts": ts, "data": milestones})
+    _write_cache(milestones, "milestones", ts=ts)
+    return milestones
+
+
 def list_milestones():
+    if _cache_hit(_MILESTONES_CACHE, 60):
+        return _MILESTONES_CACHE["data"]
+    if _MILESTONES_CACHE.get("data") is None:
+        disk = _read_cache("milestones")
+        if disk and disk.get("data") is not None:
+            _MILESTONES_CACHE.update(disk)
+    if _MILESTONES_CACHE.get("data") is not None:
+        _trigger_bg_refresh("milestones", _fetch_milestones_remote)
+        return _MILESTONES_CACHE["data"]
     try:
-        slug = github_repo_slug()
-        raw = gh_api_json(f"repos/{slug}/milestones?state=all&per_page=100", timeout=20, retries=2)
-        milestones = []
-        for item in raw if isinstance(raw, list) else []:
-            milestone = _normalize_milestone(item)
-            if milestone:
-                milestones.append(milestone)
-        milestones.sort(key=lambda item: (
-            0 if item.get("state") == "open" else 1,
-            item.get("due_on") or "9999-12-31T23:59:59Z",
-            item.get("number") or 0,
-            item.get("title") or "",
-        ))
-        return milestones
+        return _fetch_milestones_remote()
     except Exception as e:
         return [{"error": str(e)}]
 
@@ -584,70 +720,99 @@ def close_milestone(number: int):
         return {"error": (e.stderr or e.stdout or "").strip() or "close milestone failed"}
 
 
+def _fetch_prs_remote():
+    out = subprocess.run(
+        ["gh", "pr", "list", "--state", "open", "--limit", "60",
+         "--json", "number,title,body,isDraft,headRefName,baseRefName,url,reviewDecision,mergeable,labels,statusCheckRollup,comments,author,createdAt,updatedAt"],
+        capture_output=True, text=True, timeout=20, check=True,
+    ).stdout
+    prs = json.loads(out)
+    for pr in prs:
+        pr["labels"] = [l["name"] for l in pr.get("labels", [])]
+        checks = pr.get("statusCheckRollup") or []
+        ci_states = [(c.get("conclusion") or c.get("status") or "").upper() for c in checks]
+        failing_checks = []
+        pending_checks = []
+        for c in checks if isinstance(checks, list) else []:
+            name = c.get("name") or c.get("context") or "check"
+            state = (c.get("conclusion") or c.get("status") or "").upper()
+            if state in ("FAILURE", "ERROR", "ACTION_REQUIRED"):
+                failing_checks.append(name)
+            elif state not in ("SUCCESS", "COMPLETED", "NEUTRAL", "SKIPPED"):
+                pending_checks.append(name)
+        if not ci_states:
+            pr["ci"] = "none"
+        elif any(s == "FAILURE" for s in ci_states):
+            pr["ci"] = "fail"
+        elif all(s in ("SUCCESS", "COMPLETED", "NEUTRAL", "SKIPPED") for s in ci_states):
+            pr["ci"] = "pass"
+        else:
+            pr["ci"] = "pending"
+        pr["failing_checks"] = failing_checks
+        pr["pending_checks"] = pending_checks
+        pr["body"] = pr.get("body") or ""
+        pr["summary"] = _text_preview(pr["body"], 180) or "no body yet"
+        pr["head"] = pr.get("headRefName") or ""
+        pr["base"] = pr.get("baseRefName") or ""
+        author = pr.get("author") or {}
+        pr["author"] = author.get("login") if isinstance(author, dict) else ""
+        del pr["statusCheckRollup"]
+        comments = pr.get("comments") or []
+        pr["reviewed_by_codex"] = any(
+            (c.get("body") or "").startswith("# Reviewer-agent verdict")
+            for c in comments
+        )
+        url_file = STATE_DIR / f"review-{pr['number']}.url"
+        try:
+            if url_file.exists():
+                pr["review_url"] = url_file.read_text().strip() or None
+        except Exception:
+            pass
+        del pr["comments"]
+    ts = time.time()
+    _PRS_CACHE.update({"ts": ts, "data": prs})
+    _write_cache(prs, "prs", ts=ts)
+    return prs
+
+
 def list_prs():
-    if _PRS_CACHE["data"] and time.time() - _PRS_CACHE["ts"] < 20:
+    if _cache_hit(_PRS_CACHE, 20):
+        return _PRS_CACHE["data"]
+    if _PRS_CACHE.get("data") is None:
+        disk = _read_cache("prs")
+        if disk and disk.get("data") is not None:
+            _PRS_CACHE.update(disk)
+    if _PRS_CACHE.get("data") is not None:
+        _trigger_bg_refresh("prs", _fetch_prs_remote)
         return _PRS_CACHE["data"]
     try:
-        out = subprocess.run(
-            ["gh", "pr", "list", "--state", "open", "--limit", "60",
-             "--json", "number,title,body,isDraft,headRefName,baseRefName,url,reviewDecision,mergeable,labels,statusCheckRollup,comments,author,createdAt,updatedAt"],
-            capture_output=True, text=True, timeout=20, check=True,
-        ).stdout
-        prs = json.loads(out)
-        for pr in prs:
-            pr["labels"] = [l["name"] for l in pr.get("labels", [])]
-            checks = pr.get("statusCheckRollup") or []
-            ci_states = [(c.get("conclusion") or c.get("status") or "").upper() for c in checks]
-            failing_checks = []
-            pending_checks = []
-            for c in checks if isinstance(checks, list) else []:
-                name = c.get("name") or c.get("context") or "check"
-                state = (c.get("conclusion") or c.get("status") or "").upper()
-                if state in ("FAILURE", "ERROR", "ACTION_REQUIRED"):
-                    failing_checks.append(name)
-                elif state not in ("SUCCESS", "COMPLETED", "NEUTRAL", "SKIPPED"):
-                    pending_checks.append(name)
-            if not ci_states:
-                pr["ci"] = "none"
-            elif any(s == "FAILURE" for s in ci_states):
-                pr["ci"] = "fail"
-            elif all(s in ("SUCCESS", "COMPLETED", "NEUTRAL", "SKIPPED") for s in ci_states):
-                pr["ci"] = "pass"
-            else:
-                pr["ci"] = "pending"
-            pr["failing_checks"] = failing_checks
-            pr["pending_checks"] = pending_checks
-            pr["body"] = pr.get("body") or ""
-            pr["summary"] = _text_preview(pr["body"], 180) or "no body yet"
-            pr["head"] = pr.get("headRefName") or ""
-            pr["base"] = pr.get("baseRefName") or ""
-            author = pr.get("author") or {}
-            pr["author"] = author.get("login") if isinstance(author, dict) else ""
-            del pr["statusCheckRollup"]
-            comments = pr.get("comments") or []
-            pr["reviewed_by_codex"] = any(
-                (c.get("body") or "").startswith("# Reviewer-agent verdict")
-                for c in comments
-            )
-            url_file = STATE_DIR / f"review-{pr['number']}.url"
-            try:
-                if url_file.exists():
-                    pr["review_url"] = url_file.read_text().strip() or None
-            except Exception:
-                pass
-            del pr["comments"]
-        _PRS_CACHE.update({"ts": time.time(), "data": prs})
-        return prs
+        return _fetch_prs_remote()
     except Exception as e:
         return [{"error": str(e)}]
 
 
 def invalidate_caches():
+    # Mark in-memory caches stale so the next call goes through the SWR
+    # path. Disk cache is intentionally kept — it lets the upcoming snapshot
+    # poll return the stale-but-good data immediately while a background
+    # refresh fetches the new state. The poll-after-next sees fresh data.
     _ISSUES_CACHE["ts"] = 0
     _PRS_CACHE["ts"] = 0
+    _MILESTONES_CACHE["ts"] = 0
     _NOTIFS_CACHE["ts"] = 0
-    _ISSUE_META_CACHE.clear()
-    _PR_META_CACHE.clear()
+    for entry in _ISSUE_META_CACHE.values():
+        entry["ts"] = 0
+    for entry in _PR_META_CACHE.values():
+        entry["ts"] = 0
+    for entry in _PR_DIFF_CACHE.values():
+        entry["ts"] = 0
+    for entry in _PR_CI_CACHE.values():
+        entry["ts"] = 0
+    # Kick off immediate background refreshes so the new state propagates
+    # within ~1-2s rather than waiting for the next dashboard poll.
+    _trigger_bg_refresh("issues", _fetch_issues_remote)
+    _trigger_bg_refresh("prs", _fetch_prs_remote)
+    _trigger_bg_refresh("milestones", _fetch_milestones_remote)
 
 
 def _normalize_notification(raw):
@@ -668,21 +833,7 @@ def _normalize_notification(raw):
     }
 
 
-def list_notifications(all_read=False, reason="owner", pages=3):
-    """
-    Fetch GitHub notifications via `gh api /notifications`.
-    Returns a flat list of normalised notification objects, oldest first.
-    Cached for 30 s unless `all_read` or `reason` differ from cache key.
-    """
-    cache_key = (all_read, reason)
-    now = time.time()
-    if (
-        _NOTIFS_CACHE["data"] is not None
-        and _NOTIFS_CACHE.get("key") == cache_key
-        and now - _NOTIFS_CACHE["ts"] < 30
-    ):
-        return _NOTIFS_CACHE["data"]
-
+def _fetch_notifications_remote(all_read, reason):
     params = []
     if all_read:
         params.append("all=true")
@@ -692,7 +843,40 @@ def list_notifications(all_read=False, reason="owner", pages=3):
     path = "/notifications" + (f"?{qs}" if qs else "")
     raw = gh_api_json(path)
     if isinstance(raw, dict) and "error" in raw:
-        return [{"error": raw["error"]}]
+        raise RuntimeError(raw["error"])
     items = [_normalize_notification(n) for n in raw or [] if _normalize_notification(n)]
-    _NOTIFS_CACHE.update({"ts": now, "data": items, "key": cache_key})
+    ts = time.time()
+    _NOTIFS_CACHE.update({"ts": ts, "data": items, "key": (all_read, reason)})
+    _write_cache(items, "notifications", all_read, reason, ts=ts)
     return items
+
+
+def list_notifications(all_read=False, reason="owner", pages=3):
+    """
+    Fetch GitHub notifications via `gh api /notifications`.
+    Returns a flat list of normalised notification objects, oldest first.
+    Cached for 30 s unless `all_read` or `reason` differ from cache key.
+    Stale cache is served immediately while a background refresh runs.
+    """
+    cache_key = (all_read, reason)
+    now = time.time()
+    if (
+        _NOTIFS_CACHE["data"] is not None
+        and _NOTIFS_CACHE.get("key") == cache_key
+        and now - _NOTIFS_CACHE["ts"] < 30
+    ):
+        return _NOTIFS_CACHE["data"]
+    if _NOTIFS_CACHE.get("key") != cache_key or _NOTIFS_CACHE.get("data") is None:
+        disk = _read_cache("notifications", all_read, reason)
+        if disk and disk.get("data") is not None:
+            _NOTIFS_CACHE.update({"ts": disk.get("ts") or 0, "data": disk["data"], "key": cache_key})
+    if _NOTIFS_CACHE.get("data") is not None and _NOTIFS_CACHE.get("key") == cache_key:
+        _trigger_bg_refresh(
+            ("notifications", all_read, reason),
+            lambda: _fetch_notifications_remote(all_read, reason),
+        )
+        return _NOTIFS_CACHE["data"]
+    try:
+        return _fetch_notifications_remote(all_read, reason)
+    except Exception as e:
+        return [{"error": str(e)}]

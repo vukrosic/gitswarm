@@ -6,6 +6,7 @@ import { PaneHeader, PaneShell } from './_shared';
 interface IssuePaneProps {
   issue: Issue;
   body: string;
+  busy: string;
   onBodyChange: (body: string) => void;
   onOpenIssueCreator: () => void;
   onClaim: () => void;
@@ -32,6 +33,7 @@ function CommentBlock({ comment }: { comment: GitHubComment }) {
 export function IssuePane({
   issue,
   body,
+  busy,
   onBodyChange: _onBodyChange,
   onOpenIssueCreator,
   onClaim,
@@ -40,6 +42,10 @@ export function IssuePane({
   onDelete,
 }: IssuePaneProps) {
   const comments = issue.comments || [];
+  const claimLoading = busy === `claim #${issue.number}`;
+  const reviewLoading = busy === `review #${issue.number}`;
+  const saveLoading = busy === `update #${issue.number}`;
+  const deleteLoading = busy === `delete #${issue.number}`;
   return (
     <PaneShell className="min-w-0">
       <PaneHeader
@@ -56,27 +62,36 @@ export function IssuePane({
         ].filter(Boolean) as string[]}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={onOpenIssueCreator}>New issue</Button>
+            <Button variant="outline" size="sm" onClick={onOpenIssueCreator} disabled={!!busy}>New issue</Button>
             <Button
               variant="primary"
               size="sm"
               onClick={onClaim}
+              loading={claimLoading}
+              disabled={!!busy}
               title="Spawn an agent (Claude/Codex) in a fresh worktree branch for this issue and drop you into its terminal"
             >
               Claim
             </Button>
-            <Button variant="outline" size="sm" onClick={onReview}>Review</Button>
+            <Button variant="outline" size="sm" onClick={onReview} loading={reviewLoading} disabled={!!busy}>
+              Review
+            </Button>
             {issue.url ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => window.open(issue.url, '_blank', 'noopener,noreferrer')}
+                disabled={!!busy}
               >
                 Open on GitHub
               </Button>
             ) : null}
-            <Button variant="outline" size="sm" onClick={onSave}>Save body</Button>
-            <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
+            <Button variant="outline" size="sm" onClick={onSave} loading={saveLoading} disabled={!!busy}>
+              Save body
+            </Button>
+            <Button variant="danger" size="sm" onClick={onDelete} loading={deleteLoading} disabled={!!busy}>
+              Delete
+            </Button>
           </>
         }
       />

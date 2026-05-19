@@ -58,7 +58,7 @@ export function NotificationsPane({ notifications, loading, onRefresh }: Notific
         meta={`${unread.length} unread · ${read.length} read`}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={onRefresh} loading={loading} disabled={loading}>
               Refresh
             </Button>
           </>

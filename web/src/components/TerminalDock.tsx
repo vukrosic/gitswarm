@@ -17,6 +17,7 @@ interface TerminalDockProps {
   offset: number;
   alive: boolean;
   collapsed: boolean;
+  busy: string;
   onClose: () => void;
   onDelete: () => void;
   onToggle: () => void;
@@ -65,6 +66,7 @@ export function TerminalDock({
   offset,
   alive,
   collapsed,
+  busy,
   onClose,
   onDelete: _onDelete,
   onToggle,
@@ -87,6 +89,8 @@ export function TerminalDock({
     terminalRef.current?.focus();
     inputRef.current?.focus();
   };
+  const closeLoading = pty ? busy === `close pty ${pty.sid}` : false;
+  const newAgentLoading = busy === 'agent-shell';
   const captureKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!pty) return;
     if (event.ctrlKey && event.key.toLowerCase() === 'c') {
@@ -238,11 +242,11 @@ export function TerminalDock({
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 p-3">
-          <Button variant="outline" size="sm" onClick={onNewAgent}>
+          <Button variant="outline" size="sm" onClick={onNewAgent} loading={newAgentLoading} disabled={!!busy}>
             <Plus className="h-3 w-3" />
             agent
           </Button>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={!pty}>
+          <Button variant="ghost" size="sm" onClick={onClose} loading={closeLoading} disabled={!pty || !!busy}>
             <X className="h-3 w-3" />
             Close
           </Button>
@@ -269,11 +273,11 @@ export function TerminalDock({
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-          <Button variant="outline" size="sm" onClick={onNewAgent}>
+          <Button variant="outline" size="sm" onClick={onNewAgent} loading={newAgentLoading} disabled={!!busy}>
             <Plus className="h-3 w-3" />
             agent
           </Button>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={!pty}>
+          <Button variant="ghost" size="sm" onClick={onClose} loading={closeLoading} disabled={!pty || !!busy}>
             <X className="h-3 w-3" />
             Close
           </Button>

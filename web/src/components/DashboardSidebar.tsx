@@ -39,6 +39,7 @@ interface DashboardSidebarProps {
   files: FileEntry[];
   agents: Agent[];
   selectedAgent: string;
+  busy: string;
   toolbar: ReactNode;
   onPaneChange: (pane: Pane) => void;
   onIssueFilterChange: (filter: IssueFilter) => void;
@@ -80,6 +81,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
     files,
     agents,
     selectedAgent,
+    busy,
     toolbar,
     onPaneChange,
     onIssueFilterChange,
@@ -276,31 +278,89 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
                 <div className="flex flex-wrap gap-1">
                   {entry.kind === 'issue' ? (
                     <>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onClaimIssue(entry.item); }}>Claim</RowButton>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onReviewIssue(entry.item); }}>Review</RowButton>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onIssueTerminal(entry.item); }}>Terminal</RowButton>
+                      <RowButton
+                        loading={busy === `claim #${entry.item.number}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onClaimIssue(entry.item); }}
+                      >
+                        Claim
+                      </RowButton>
+                      <RowButton
+                        loading={busy === `review #${entry.item.number}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onReviewIssue(entry.item); }}
+                      >
+                        Review
+                      </RowButton>
+                      <RowButton
+                        loading={busy === `claim #${entry.item.number}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onIssueTerminal(entry.item); }}
+                      >
+                        Terminal
+                      </RowButton>
                     </>
                   ) : null}
                   {entry.kind === 'pr' ? (
                     <>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onReviewPr(entry.item); }}>Review</RowButton>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onMergePr(entry.item); }}>Merge</RowButton>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onFixCi(entry.item); }}>Fix CI</RowButton>
+                      <RowButton
+                        loading={busy === `review PR #${entry.item.number}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onReviewPr(entry.item); }}
+                      >
+                        Review
+                      </RowButton>
+                      <RowButton
+                        loading={busy === `merge PR #${entry.item.number}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onMergePr(entry.item); }}
+                      >
+                        Merge
+                      </RowButton>
+                      <RowButton
+                        loading={busy === `fix-ci PR #${entry.item.number}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onFixCi(entry.item); }}
+                      >
+                        Fix CI
+                      </RowButton>
                     </>
                   ) : null}
                   {entry.kind === 'pty' ? (
                     <>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onFocusPty(entry.item); }}>Focus</RowButton>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onClosePty(entry.item); }}>Close</RowButton>
-                      <RowButton danger onClick={(e) => { e.stopPropagation(); onDeletePty(entry.item); }}>Delete</RowButton>
+                      <RowButton disabled={!!busy} onClick={(e) => { e.stopPropagation(); onFocusPty(entry.item); }}>
+                        Focus
+                      </RowButton>
+                      <RowButton
+                        loading={busy === `close pty ${entry.item.sid}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onClosePty(entry.item); }}
+                      >
+                        Close
+                      </RowButton>
+                      <RowButton
+                        danger
+                        loading={busy === `delete pty ${entry.item.sid}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onDeletePty(entry.item); }}
+                      >
+                        Delete
+                      </RowButton>
                     </>
                   ) : null}
                   {entry.kind === 'worktree' ? (
                     <>
-                      <RowButton onClick={(e) => { e.stopPropagation(); onWorktreeShell(entry.item); }}>Shell</RowButton>
+                      <RowButton
+                        loading={busy === `shell ${entry.item.name}`}
+                        disabled={!!busy}
+                        onClick={(e) => { e.stopPropagation(); onWorktreeShell(entry.item); }}
+                      >
+                        Shell
+                      </RowButton>
                       <RowButton
                         danger
-                        disabled={!entry.item.safe_remove || !!entry.item.running}
+                        loading={busy === `remove ${entry.item.name}`}
+                        disabled={!!busy || !entry.item.safe_remove || !!entry.item.running}
                         title={entry.item.running ? 'Running worktrees should be closed before removal' : !entry.item.safe_remove ? 'Only merged, clean worktrees can be removed' : undefined}
                         onClick={(e) => { e.stopPropagation(); onWorktreeRemove(entry.item); }}
                       >
@@ -309,7 +369,7 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
                     </>
                   ) : null}
                   {entry.kind === 'milestone' ? (
-                    <RowButton onClick={(e) => { e.stopPropagation(); onSelectMilestoneIssue(entry.item); }}>
+                    <RowButton disabled={!!busy} onClick={(e) => { e.stopPropagation(); onSelectMilestoneIssue(entry.item); }}>
                       Open issues
                     </RowButton>
                   ) : null}
@@ -327,12 +387,14 @@ function RowButton({
   children,
   danger,
   disabled,
+  loading,
   title,
   onClick,
 }: {
   children: ReactNode;
   danger?: boolean;
   disabled?: boolean;
+  loading?: boolean;
   title?: string;
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
@@ -343,6 +405,7 @@ function RowButton({
       size="sm"
       className="h-6 px-2 text-[10px]"
       disabled={disabled}
+      loading={loading}
       title={title}
       onClick={onClick}
     >

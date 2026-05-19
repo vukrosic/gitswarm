@@ -18,6 +18,7 @@ interface PtyStreamState {
 interface MainContentProps {
   pane: Pane;
   loading: boolean;
+  busy: string;
   snapshot: Snapshot | null;
   error: string;
   selectedIssue: Issue | null;
@@ -65,12 +66,14 @@ interface MainContentProps {
   onBatchClaimNext: () => void;
   onPruneMerged: () => void;
   onRefreshNotifications: () => void;
+  notificationsLoading: boolean;
 }
 
 export function MainContent(props: MainContentProps) {
   const {
     pane,
     loading,
+    busy,
     snapshot,
     error,
     selectedIssue,
@@ -118,6 +121,7 @@ export function MainContent(props: MainContentProps) {
     onBatchReview,
     onBatchClaimNext,
     onPruneMerged,
+    notificationsLoading,
   } = props;
 
   return (
@@ -136,6 +140,7 @@ export function MainContent(props: MainContentProps) {
         <IssuePane
           issue={selectedIssue}
           body={issueBody}
+          busy={busy}
           onBodyChange={onIssueBodyChange}
           onOpenIssueCreator={onOpenIssueCreator}
           onClaim={() => onClaimIssue(selectedIssue)}
@@ -159,6 +164,7 @@ export function MainContent(props: MainContentProps) {
           pr={selectedPr}
           diff={prDiff}
           onOpenGitHub={() => onOpenPrGitHub(selectedPr)}
+          busy={busy}
           onReview={() => onReviewPr(selectedPr)}
           onMerge={() => onMergePr(selectedPr)}
           onFixCi={() => onFixCi(selectedPr)}
@@ -171,6 +177,7 @@ export function MainContent(props: MainContentProps) {
           log={ptyStream.text}
           offset={ptyStream.offset}
           alive={ptyStream.alive}
+          busy={busy}
           onInputChange={onPtyTextChange}
           onSend={onSendPty}
           onCtrlC={onPtyCtrlC}
@@ -181,6 +188,7 @@ export function MainContent(props: MainContentProps) {
       {pane === 'worktrees' && selectedWorktree ? (
         <WorktreePane
           worktree={selectedWorktree}
+          busy={busy}
           onShell={() => onWorktreeShell(selectedWorktree)}
           onRemove={() => onWorktreeRemove(selectedWorktree)}
         />
@@ -192,6 +200,7 @@ export function MainContent(props: MainContentProps) {
           issueTitle={issueTitle}
           issueBody={issueDraftBody}
           launchText={launchText}
+          busy={busy}
           onIssueTitleChange={onIssueTitleChange}
           onIssueBodyChange={onIssueDraftBodyChange}
           onLaunchTextChange={onLaunchTextChange}
@@ -207,7 +216,7 @@ export function MainContent(props: MainContentProps) {
       {pane === 'notifications' ? (
         <NotificationsPane
           notifications={notifications}
-          loading={loading}
+          loading={notificationsLoading}
           onRefresh={onRefreshNotifications}
         />
       ) : null}

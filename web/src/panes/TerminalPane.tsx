@@ -12,6 +12,7 @@ interface TerminalPaneProps {
   log: string;
   offset: number;
   alive: boolean;
+  busy: string;
   onInputChange: (value: string) => void;
   onSend: () => void;
   onCtrlC: () => void;
@@ -25,6 +26,7 @@ export function TerminalPane({
   log,
   offset,
   alive,
+  busy,
   onInputChange,
   onSend,
   onCtrlC,
@@ -32,6 +34,10 @@ export function TerminalPane({
   onDelete,
 }: TerminalPaneProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const sendLoading = busy === 'send pty';
+  const ctrlCLoading = busy === 'ctrl-c pty';
+  const closeLoading = busy === `close pty ${pty.sid}`;
+  const deleteLoading = busy === `delete pty ${pty.sid}`;
   const displayLog = useMemo(
     () => renderTerminalText(log, { rows: pty.rows || 30, cols: pty.cols || 120 }),
     [log, pty.rows, pty.cols],
@@ -49,10 +55,18 @@ export function TerminalPane({
         meta={`${pty.cwd} · ${pty.alive ? 'alive' : 'dead'} · ${ago(pty.last_output)}`}
         actions={
           <>
-            <Button variant="primary" size="sm" onClick={onSend}>Send</Button>
-            <Button variant="outline" size="sm" onClick={onCtrlC}>Ctrl-C</Button>
-            <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
-            <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
+            <Button variant="primary" size="sm" onClick={onSend} loading={sendLoading} disabled={!!busy}>
+              Send
+            </Button>
+            <Button variant="outline" size="sm" onClick={onCtrlC} loading={ctrlCLoading} disabled={!!busy}>
+              Ctrl-C
+            </Button>
+            <Button variant="outline" size="sm" onClick={onClose} loading={closeLoading} disabled={!!busy}>
+              Close
+            </Button>
+            <Button variant="danger" size="sm" onClick={onDelete} loading={deleteLoading} disabled={!!busy}>
+              Delete
+            </Button>
           </>
         }
       />

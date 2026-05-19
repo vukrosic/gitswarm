@@ -5,6 +5,7 @@ import { PaneHeader, PaneShell } from './_shared';
 
 interface WorktreePaneProps {
   worktree: Worktree;
+  busy: string;
   onShell: () => void;
   onRemove: () => void;
 }
@@ -17,8 +18,10 @@ function worktreeTone(worktree: Worktree) {
   return 'default';
 }
 
-export function WorktreePane({ worktree, onShell, onRemove }: WorktreePaneProps) {
+export function WorktreePane({ worktree, busy, onShell, onRemove }: WorktreePaneProps) {
   const canRemove = !!worktree.safe_remove && !worktree.running && !worktree.dirty;
+  const shellLoading = busy === `shell ${worktree.name}`;
+  const removeLoading = busy === `remove ${worktree.name}`;
 
   return (
     <PaneShell>
@@ -34,12 +37,15 @@ export function WorktreePane({ worktree, onShell, onRemove }: WorktreePaneProps)
         ].filter(Boolean) as string[]}
         actions={
           <>
-            <Button variant="primary" size="sm" onClick={onShell}>Shell</Button>
+            <Button variant="primary" size="sm" onClick={onShell} loading={shellLoading} disabled={!!busy}>
+              Shell
+            </Button>
             <Button
               variant="danger"
               size="sm"
               onClick={onRemove}
-              disabled={!canRemove}
+              loading={removeLoading}
+              disabled={!!busy || !canRemove}
               title={
                 worktree.running
                   ? 'Wait for the active session to stop before removing this worktree'

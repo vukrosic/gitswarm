@@ -20,6 +20,7 @@ import type { IssueFilter, LaunchResult, Pane, Selection } from './types/dashboa
 import { AppHeader } from './components/AppHeader';
 import { DashboardSidebar } from './components/DashboardSidebar';
 import { TerminalDock } from './components/TerminalDock';
+import { Button } from '@/components/ui/button';
 import { MainContent } from './panes/MainContent';
 import { AgentGridPane } from './panes/AgentGridPane';
 import { useDashboardData } from './hooks/useDashboardData';
@@ -324,13 +325,17 @@ export default function App() {
 
   async function handleSendPty() {
     if (selection.kind !== 'pty') return;
-    await ptyInput(selection.id, ptyText.endsWith('\n') ? ptyText : `${ptyText}\n`);
-    setPtyText('');
+    await run('send pty', async () => {
+      await ptyInput(selection.id, ptyText.endsWith('\n') ? ptyText : `${ptyText}\n`);
+      setPtyText('');
+    }, false);
   }
 
   async function handlePtyCtrlC() {
     if (selection.kind !== 'pty') return;
-    await ptyInput(selection.id, '\u0003');
+    await run('ctrl-c pty', async () => {
+      await ptyInput(selection.id, '\u0003');
+    }, false);
   }
 
   async function handleDockType(value: string) {
@@ -446,7 +451,7 @@ export default function App() {
     if (!batch.length) return;
     if (!confirm(`Launch ${batch.length} claim-next issue${batch.length === 1 ? '' : 's'}?`)) return;
     for (let i = 0; i < batch.length; i += 1) {
-    await launchIssueShell(batch[i], i === batch.length - 1);
+      await launchIssueShell(batch[i], i === batch.length - 1);
       if (i < batch.length - 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 800));
       }
@@ -455,8 +460,24 @@ export default function App() {
 
   const selectedIssueActions = selectedIssue ? (
     <>
-      <button onClick={() => void handleReviewIssue(selectedIssue)}>Review issue</button>
-      <button onClick={() => void launchIssueShell(selectedIssue)}>Open terminal</button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => void handleReviewIssue(selectedIssue)}
+        loading={busy === `review #${selectedIssue.number}`}
+        disabled={!!busy}
+      >
+        Review issue
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => void launchIssueShell(selectedIssue)}
+        loading={busy === `claim #${selectedIssue.number}`}
+        disabled={!!busy}
+      >
+        Open terminal
+      </Button>
     </>
   ) : null;
 
@@ -465,36 +486,107 @@ export default function App() {
       case 'issues':
         return (
           <>
-            <button onClick={() => void handleBatchReviewVisible()}>Batch review</button>
-            <button onClick={() => void handleBatchClaimNext()}>Batch claim-next</button>
-            <button onClick={() => handleOpenIssueCreator()}>New issue</button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleBatchReviewVisible()}
+              loading={busy === 'batch review' || busy.startsWith('review #')}
+              disabled={!!busy}
+            >
+              Batch review
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleBatchClaimNext()}
+              loading={busy === 'batch claim-next' || busy.startsWith('claim #')}
+              disabled={!!busy}
+            >
+              Batch claim-next
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => handleOpenIssueCreator()} disabled={!!busy}>
+              New issue
+            </Button>
             {selectedIssueActions}
           </>
         );
       case 'milestones':
         return (
           <>
-            <button onClick={() => void (selectedMilestone ? handleOpenMilestoneIssues(selectedMilestone) : undefined)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void (selectedMilestone ? handleOpenMilestoneIssues(selectedMilestone) : undefined)}
+              disabled={!!busy}
+            >
               Open issues
-            </button>
+            </Button>
             {selectedMilestone?.url ? (
-              <button onClick={() => window.open(selectedMilestone.url, '_blank', 'noopener,noreferrer')}>
+              <Button variant="outline" size="sm" onClick={() => window.open(selectedMilestone.url, '_blank', 'noopener,noreferrer')} disabled={!!busy}>
                 GitHub
-              </button>
+              </Button>
             ) : null}
           </>
         );
       case 'pty':
         return (
           <>
-            <button onClick={() => void handleNewShell()}>New shell</button>
-            <button onClick={() => void handleAgentShell()}>Agent shell</button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleNewShell()}
+              loading={busy === 'shell'}
+              disabled={!!busy}
+            >
+              New shell
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleAgentShell()}
+              loading={busy === 'agent-shell'}
+              disabled={!!busy}
+            >
+              Agent shell
+            </Button>
             {selectedPty ? (
               <>
-                <button onClick={() => void handleSendPty()}>Send</button>
-                <button onClick={() => void handlePtyCtrlC()}>Ctrl-C</button>
-                <button onClick={() => void handleClosePty(selectedPty)}>Close</button>
-                <button className="danger" onClick={() => void handleDeletePty(selectedPty)}>Delete</button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleSendPty()}
+                  loading={busy === 'send pty'}
+                  disabled={!!busy}
+                >
+                  Send
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handlePtyCtrlC()}
+                  loading={busy === 'ctrl-c pty'}
+                  disabled={!!busy}
+                >
+                  Ctrl-C
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleClosePty(selectedPty)}
+                  loading={busy === `close pty ${selectedPty.sid}`}
+                  disabled={!!busy}
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => void handleDeletePty(selectedPty)}
+                  loading={busy === `delete pty ${selectedPty.sid}`}
+                  disabled={!!busy}
+                >
+                  Delete
+                </Button>
               </>
             ) : null}
           </>
@@ -502,11 +594,35 @@ export default function App() {
       case 'worktrees':
         return (
           <>
-            <button onClick={() => void handlePruneMergedWorktrees()}>Prune merged</button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handlePruneMergedWorktrees()}
+              loading={busy === 'prune merged worktrees'}
+              disabled={!!busy}
+            >
+              Prune merged
+            </Button>
             {selectedWorktree ? (
               <>
-                <button onClick={() => void handleWorktreeShell(selectedWorktree)}>Shell</button>
-                <button className="danger" onClick={() => void handleWorktreeRemove(selectedWorktree)}>Remove</button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleWorktreeShell(selectedWorktree)}
+                  loading={busy === `shell ${selectedWorktree.name}`}
+                  disabled={!!busy}
+                >
+                  Shell
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => void handleWorktreeRemove(selectedWorktree)}
+                  loading={busy === `remove ${selectedWorktree.name}`}
+                  disabled={!!busy}
+                >
+                  Remove
+                </Button>
               </>
             ) : null}
           </>
@@ -514,9 +630,33 @@ export default function App() {
       case 'launch':
         return (
           <>
-            <button onClick={() => void handleCleanup(true)}>Audit cleanup</button>
-            <button onClick={() => void handleCleanup(false)}>Prune cleanup</button>
-            <button onClick={() => void handleCreateIssue()}>Create issue</button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleCleanup(true)}
+              loading={busy === 'cleanup audit'}
+              disabled={!!busy}
+            >
+              Audit cleanup
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleCleanup(false)}
+              loading={busy === 'cleanup prune'}
+              disabled={!!busy}
+            >
+              Prune cleanup
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleCreateIssue()}
+              loading={busy === 'create issue'}
+              disabled={!!busy}
+            >
+              Create issue
+            </Button>
           </>
         );
       default:
@@ -535,7 +675,9 @@ export default function App() {
         onAgentChange={setSelectedAgent}
         onNewShell={() => void handleNewShell()}
         onNewAgent={() => void handleAgentShell()}
-        onRefresh={() => void load()}
+        onRefresh={() => void run('refresh dashboard', async () => {
+          await load();
+        }, false)}
         onToggleDock={() => setDockCollapsed((value) => !value)}
       />
 
@@ -559,6 +701,7 @@ export default function App() {
           files={files}
           agents={agents}
           selectedAgent={selectedAgent}
+          busy={busy}
           toolbar={sidebarToolbar}
           onPaneChange={setPane}
           onIssueFilterChange={setIssueFilter}
@@ -592,6 +735,7 @@ export default function App() {
         <MainContent
           pane={pane}
           loading={loading}
+          busy={busy}
           snapshot={snapshot}
           error={error}
           selectedIssue={selectedIssue}
@@ -638,6 +782,7 @@ export default function App() {
           onBatchClaimNext={() => void handleBatchClaimNext()}
           onPruneMerged={() => void handlePruneMergedWorktrees()}
           notifications={notifications}
+          notificationsLoading={notifsLoading}
           onRefreshNotifications={() => void handleRefreshNotifications()}
         />
         )}
@@ -651,6 +796,7 @@ export default function App() {
               offset={dockStream.offset}
               alive={dockStream.alive}
               collapsed={dockCollapsed}
+              busy={busy}
               onClose={() => void handleDockClose()}
               onDelete={() => void handleDockDelete()}
               onToggle={() => setDockCollapsed((value) => !value)}

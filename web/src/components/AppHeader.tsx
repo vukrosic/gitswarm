@@ -74,6 +74,7 @@ export function AppHeader({
             variant="outline"
             size="sm"
             disabled={!!busy}
+            loading={busy === 'shell'}
             onClick={onNewShell}
             title="Open an interactive shell in the right terminal dock"
           >
@@ -84,13 +85,21 @@ export function AppHeader({
             variant="primary"
             size="sm"
             disabled={!!busy}
+            loading={busy === 'agent-shell'}
             onClick={onNewAgent}
             title="Open the selected CLI agent in the right terminal dock"
           >
             <TerminalIcon className="h-3.5 w-3.5" />
             new agent
           </Button>
-          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={!!busy} title="Refresh dashboard">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRefresh}
+            disabled={!!busy}
+            loading={busy === 'refresh dashboard'}
+            title="Refresh dashboard"
+          >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
           </Button>
