@@ -1,4 +1,4 @@
-import { Plus, RefreshCw, Terminal as TerminalIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, Terminal as TerminalIcon } from 'lucide-react';
 import type { Agent } from '../types';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,10 +8,12 @@ interface AppHeaderProps {
   defaultAgent: string;
   selectedAgent: string;
   busy: string;
+  dockCollapsed: boolean;
   onAgentChange: (agent: string) => void;
   onNewShell: () => void;
   onNewAgent: () => void;
   onRefresh: () => void;
+  onToggleDock: () => void;
 }
 
 export function AppHeader({
@@ -19,10 +21,12 @@ export function AppHeader({
   defaultAgent,
   selectedAgent,
   busy,
+  dockCollapsed,
   onAgentChange,
   onNewShell,
   onNewAgent,
   onRefresh,
+  onToggleDock,
 }: AppHeaderProps) {
   const agentOptions = agents.length ? agents : [{ id: defaultAgent, label: defaultAgent, available: true, bin: '' } as Agent];
 
@@ -89,6 +93,20 @@ export function AppHeader({
           <Button variant="ghost" size="sm" onClick={onRefresh} disabled={!!busy} title="Refresh dashboard">
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onToggleDock}
+            className="h-9 w-9 px-0"
+            title={dockCollapsed ? 'Open terminal dock' : 'Collapse terminal dock'}
+            aria-label={dockCollapsed ? 'Open terminal dock' : 'Collapse terminal dock'}
+          >
+            {dockCollapsed ? (
+              <ChevronLeft className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" />
+            )}
           </Button>
         </div>
       </div>

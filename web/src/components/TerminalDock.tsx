@@ -1,7 +1,7 @@
 import type { ClipboardEvent, KeyboardEvent, UIEvent } from 'react';
 import type { PtySession } from '../types';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Terminal as TerminalIcon, X, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Terminal as TerminalIcon, X, Pencil } from 'lucide-react';
 import { ptyResize, ptyRename } from '../api';
 import { ago } from '../lib/time';
 import { sessionLabel } from '../lib/labels';
@@ -205,13 +205,48 @@ export function TerminalDock({
     }
   }
 
+  if (collapsed) {
+    return (
+      <section
+        aria-label="Manual terminal dock"
+        className={cn(
+          'flex min-h-0 flex-col overflow-hidden rounded-[var(--radius)] border border-border bg-gradient-to-b from-card/90 to-background/95 shadow-[0_24px_70px_hsl(0_0%_0%/0.42)] backdrop-blur-xl',
+          'w-full',
+        )}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border/60 bg-background/40 p-3.5">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Dock</div>
+            <h3 className="mt-0.5 truncate text-sm font-semibold tracking-tight text-foreground">
+              {pty ? sessionLabel(pty) : 'manual shells & agents'}
+            </h3>
+            <div className="mt-1 truncate text-[11px] text-muted-foreground">
+              Collapsed. Open to show sessions and terminal output.
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onToggle}>
+            <ChevronLeft className="h-3 w-3" />
+            Open
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 p-3">
+          <Button variant="outline" size="sm" onClick={onNewAgent}>
+            <Plus className="h-3 w-3" />
+            agent
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={!pty}>
+            <X className="h-3 w-3" />
+            Close
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section
       aria-label="Manual terminal dock"
-      className={cn(
-        'flex min-h-0 flex-col overflow-hidden rounded-[var(--radius)] border border-border bg-gradient-to-b from-card/90 to-background/95 shadow-[0_24px_70px_hsl(0_0%_0%/0.42)] backdrop-blur-xl',
-        collapsed && 'min-h-[88px]',
-      )}
+      className="flex min-h-0 flex-col overflow-hidden rounded-[var(--radius)] border border-border bg-gradient-to-b from-card/90 to-background/95 shadow-[0_24px_70px_hsl(0_0%_0%/0.42)] backdrop-blur-xl"
     >
       <div className="flex items-start justify-between gap-3 border-b border-border/60 bg-background/40 p-3.5">
         <div className="min-w-0 flex-1">
@@ -235,8 +270,8 @@ export function TerminalDock({
             Close
           </Button>
           <Button variant="ghost" size="sm" onClick={onToggle}>
-            {collapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-            {collapsed ? 'Open' : 'Collapse'}
+            <ChevronRight className="h-3 w-3" />
+            Collapse
           </Button>
         </div>
       </div>

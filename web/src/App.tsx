@@ -499,13 +499,21 @@ export default function App() {
         defaultAgent={defaultAgent}
         selectedAgent={selectedAgent}
         busy={busy}
+        dockCollapsed={dockCollapsed}
         onAgentChange={setSelectedAgent}
         onNewShell={() => void handleNewShell()}
         onNewAgent={() => void handleAgentShell()}
         onRefresh={() => void load()}
+        onToggleDock={() => setDockCollapsed((value) => !value)}
       />
 
-      <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[340px_minmax(340px,0.95fr)_minmax(420px,1.25fr)] max-lg:grid-cols-[280px_minmax(0,1fr)] max-lg:grid-rows-[1fr_minmax(380px,54vh)] max-md:grid-cols-1 max-md:grid-rows-[auto_auto_minmax(300px,50vh)]">
+      <div
+        className={`relative grid min-h-0 flex-1 gap-4 overflow-hidden p-4 ${
+          dockCollapsed
+            ? 'lg:grid-cols-[340px_minmax(0,1fr)]'
+            : 'lg:grid-cols-[340px_minmax(340px,0.95fr)_minmax(420px,1.25fr)]'
+        } max-lg:grid-cols-[280px_minmax(0,1fr)] max-lg:grid-rows-[1fr_minmax(380px,54vh)] max-md:grid-cols-1 max-md:grid-rows-[auto_auto_minmax(300px,50vh)]`}
+      >
         <DashboardSidebar
           pane={pane}
           counts={counts}
@@ -603,22 +611,24 @@ export default function App() {
         />
         )}
 
-        <div className={`grid min-h-0 gap-3 overflow-hidden ${dockCollapsed ? 'grid-rows-[auto]' : 'grid-rows-[minmax(0,1fr)]'} max-lg:col-span-full max-lg:grid-cols-[minmax(360px,1.2fr)_minmax(260px,0.8fr)] max-md:grid-cols-1`}>
-          <TerminalDock
-            pty={dockPty}
-            sessions={manualPtys}
-            log={dockStream.text}
-            offset={dockStream.offset}
-            alive={dockStream.alive}
-            collapsed={dockCollapsed}
-            onClose={() => void handleDockClose()}
-            onDelete={() => void handleDockDelete()}
-            onToggle={() => setDockCollapsed((value) => !value)}
-            onNewAgent={() => void handleAgentShell()}
-            onFocusSession={focusPty}
-            onType={(value) => void handleDockType(value)}
-          />
-        </div>
+        {!dockCollapsed ? (
+          <div className="grid min-h-0 gap-3 overflow-hidden max-lg:col-span-full max-lg:grid-cols-[minmax(360px,1.2fr)_minmax(260px,0.8fr)] max-md:grid-cols-1">
+            <TerminalDock
+              pty={dockPty}
+              sessions={manualPtys}
+              log={dockStream.text}
+              offset={dockStream.offset}
+              alive={dockStream.alive}
+              collapsed={dockCollapsed}
+              onClose={() => void handleDockClose()}
+              onDelete={() => void handleDockDelete()}
+              onToggle={() => setDockCollapsed((value) => !value)}
+              onNewAgent={() => void handleAgentShell()}
+              onFocusSession={focusPty}
+              onType={(value) => void handleDockType(value)}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
