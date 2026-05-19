@@ -30,7 +30,6 @@ interface MainContentProps {
   issueBody: string;
   prDiff: string;
   fileText: string;
-  ptyText: string;
   ptyStream: PtyStreamState;
   selectedAgent: string;
   issueTitle: string;
@@ -38,7 +37,6 @@ interface MainContentProps {
   launchText: string;
   notifications: GitHubNotification[];
   onIssueBodyChange: (value: string) => void;
-  onPtyTextChange: (value: string) => void;
   onIssueTitleChange: (value: string) => void;
   onIssueDraftBodyChange: (value: string) => void;
   onLaunchTextChange: (value: string) => void;
@@ -53,8 +51,7 @@ interface MainContentProps {
   onReviewPr: (pr: PullRequest) => void;
   onMergePr: (pr: PullRequest) => void;
   onFixCi: (pr: PullRequest) => void;
-  onSendPty: () => void;
-  onPtyCtrlC: () => void;
+  onTypePty: (value: string) => void;
   onClosePty: (pty: PtySession) => void;
   onDeletePty: (pty: PtySession) => void;
   onWorktreeShell: (worktree: Worktree) => void;
@@ -85,7 +82,6 @@ export function MainContent(props: MainContentProps) {
     issueBody,
     prDiff,
     fileText,
-    ptyText,
     ptyStream,
     selectedAgent,
     issueTitle,
@@ -94,7 +90,6 @@ export function MainContent(props: MainContentProps) {
     notifications,
     onRefreshNotifications,
     onIssueBodyChange,
-    onPtyTextChange,
     onIssueTitleChange,
     onIssueDraftBodyChange,
     onLaunchTextChange,
@@ -109,8 +104,7 @@ export function MainContent(props: MainContentProps) {
     onReviewPr,
     onMergePr,
     onFixCi,
-    onSendPty,
-    onPtyCtrlC,
+    onTypePty,
     onClosePty,
     onDeletePty,
     onWorktreeShell,
@@ -173,14 +167,11 @@ export function MainContent(props: MainContentProps) {
       {pane === 'pty' && selectedPty ? (
         <TerminalPane
           pty={selectedPty}
-          input={ptyText}
           log={ptyStream.text}
           offset={ptyStream.offset}
           alive={ptyStream.alive}
           busy={busy}
-          onInputChange={onPtyTextChange}
-          onSend={onSendPty}
-          onCtrlC={onPtyCtrlC}
+          onType={onTypePty}
           onClose={() => onClosePty(selectedPty)}
           onDelete={() => onDeletePty(selectedPty)}
         />

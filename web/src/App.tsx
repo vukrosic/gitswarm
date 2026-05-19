@@ -39,7 +39,6 @@ export default function App() {
   const [issueFilter, setIssueFilter] = useState<IssueFilter>('all');
   const dashboard = useDashboardData(issueFilter);
   const [launchText, setLaunchText] = useState('summarize the first 5 open issues');
-  const [ptyText, setPtyText] = useState('');
   const [busy, setBusy] = useState<string>('');
   const [selectedAgent, setSelectedAgent] = useState(() => localStorage.getItem('gitswarm.agent') || 'codex');
   const [issueTitle, setIssueTitle] = useState('');
@@ -323,19 +322,9 @@ export default function App() {
     });
   }
 
-  async function handleSendPty() {
+  async function handleTypePty(value: string) {
     if (selection.kind !== 'pty') return;
-    await run('send pty', async () => {
-      await ptyInput(selection.id, ptyText.endsWith('\n') ? ptyText : `${ptyText}\n`);
-      setPtyText('');
-    }, false);
-  }
-
-  async function handlePtyCtrlC() {
-    if (selection.kind !== 'pty') return;
-    await run('ctrl-c pty', async () => {
-      await ptyInput(selection.id, '\u0003');
-    }, false);
+    await ptyInput(selection.id, value);
   }
 
   async function handleDockType(value: string) {
@@ -554,24 +543,6 @@ export default function App() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => void handleSendPty()}
-                  loading={busy === 'send pty'}
-                  disabled={!!busy}
-                >
-                  Send
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handlePtyCtrlC()}
-                  loading={busy === 'ctrl-c pty'}
-                  disabled={!!busy}
-                >
-                  Ctrl-C
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
                   onClick={() => void handleClosePty(selectedPty)}
                   loading={busy === `close pty ${selectedPty.sid}`}
                   disabled={!!busy}
@@ -747,14 +718,12 @@ export default function App() {
           issueBody={issueBody}
           prDiff={prDiff}
           fileText={fileText}
-          ptyText={ptyText}
           ptyStream={ptyStream}
           selectedAgent={selectedAgent}
           issueTitle={issueTitle}
           issueDraftBody={issueDraftBody}
           launchText={launchText}
           onIssueBodyChange={setIssueBody}
-          onPtyTextChange={setPtyText}
           onIssueTitleChange={setIssueTitle}
           onIssueDraftBodyChange={setIssueDraftBody}
           onLaunchTextChange={setLaunchText}
@@ -769,8 +738,7 @@ export default function App() {
           onReviewPr={(pr) => void handleReviewPr(pr)}
           onMergePr={(pr) => void handleMergePr(pr)}
           onFixCi={(pr) => void handleFixCi(pr)}
-          onSendPty={() => void handleSendPty()}
-          onPtyCtrlC={() => void handlePtyCtrlC()}
+          onTypePty={(value) => void handleTypePty(value)}
           onClosePty={(pty) => void handleClosePty(pty)}
           onDeletePty={(pty) => void handleDeletePty(pty)}
           onWorktreeShell={(worktree) => void handleWorktreeShell(worktree)}
