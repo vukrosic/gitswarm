@@ -91,6 +91,7 @@ from backend.github_remote import (
     list_issues,
     list_milestones,
     list_prs,
+    list_notifications,
     invalidate_caches,
 )
 

@@ -3,6 +3,7 @@ import json
 import re
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -12,6 +13,19 @@ STATE_DIR = None
 _ISSUES_CACHE = {"ts": 0, "data": None}
 _PRS_CACHE = {"ts": 0, "data": None}
 _NOTIFS_CACHE = {"ts": 0, "data": None}
+
+# Per-issue / per-PR detail caches. Keyed by int issue/pr number. Used to make
+# re-selecting an issue or PR feel instant in the dashboard. TTL is short
+# (snapshot poll is every 4s) so changes from GitHub are picked up quickly.
+_ISSUE_META_CACHE = {}   # {num: {"ts": float, "data": dict}}
+_PR_META_CACHE = {}      # {num: {"ts": float, "data": dict}}
+_ISSUE_META_TTL = 30
+_PR_META_TTL = 30
+
+_SLUG_CACHE = {"ts": 0, "value": ""}
+_SLUG_TTL = 300
+
+_DETAIL_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="gh-detail")
 
 
 def init(repo_root: Path, state_dir: Path):
@@ -107,14 +121,22 @@ def run_gh(args, timeout=20, retries=2):
 
 
 def github_repo_slug():
+    # The slug is effectively constant for the life of the process, so cache it.
+    # Recomputing on every issue/PR fetch costs ~10ms per call and adds nothing.
+    now = time.time()
+    if _SLUG_CACHE["value"] and now - _SLUG_CACHE["ts"] < _SLUG_TTL:
+        return _SLUG_CACHE["value"]
     remote = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "remote", "get-url", "origin"],
         capture_output=True, text=True, timeout=5, check=True,
     ).stdout.strip()
     m = re.search(r"github\.com[:/]([^/]+)/(.+?)(?:\.git)?$", remote.rstrip("/"))
     if m:
-        return f"{m.group(1)}/{m.group(2)}"
-    return run_gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], timeout=10).strip()
+        slug = f"{m.group(1)}/{m.group(2)}"
+    else:
+        slug = run_gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], timeout=10).strip()
+    _SLUG_CACHE.update({"ts": now, "value": slug})
+    return slug
 
 
 def gh_api_json(path, timeout=20, retries=2):
@@ -193,8 +215,32 @@ def _normalize_review_comment(raw):
 
 
 def fetch_pr_meta(pr_num: int):
+    try:
+        key = int(pr_num)
+    except (TypeError, ValueError):
+        key = pr_num
+    cached = _PR_META_CACHE.get(key)
+    now = time.time()
+    if cached and now - cached["ts"] < _PR_META_TTL:
+        return cached["data"]
+
     slug = github_repo_slug()
-    raw = gh_api_json(f"repos/{slug}/pulls/{pr_num}", timeout=20, retries=2)
+    # All four GitHub API calls are independent — fan out in parallel.
+    # Total wall-clock drops from sum(~4 × 800ms) ≈ 3.2s to max ≈ 1s.
+    pr_fut = _DETAIL_EXECUTOR.submit(
+        gh_api_json, f"repos/{slug}/pulls/{pr_num}", 20, 2
+    )
+    reviews_fut = _DETAIL_EXECUTOR.submit(
+        gh_api_paginated, f"repos/{slug}/pulls/{pr_num}/reviews?per_page=100", 30, 1
+    )
+    comments_fut = _DETAIL_EXECUTOR.submit(
+        gh_api_paginated, f"repos/{slug}/issues/{pr_num}/comments?per_page=100", 30, 1
+    )
+    review_comments_fut = _DETAIL_EXECUTOR.submit(
+        gh_api_paginated, f"repos/{slug}/pulls/{pr_num}/comments?per_page=100", 30, 1
+    )
+
+    raw = pr_fut.result()
     meta = {
         "number": raw.get("number"),
         "title": raw.get("title") or "",
@@ -214,7 +260,7 @@ def fetch_pr_meta(pr_num: int):
         "review_comments": [],
     }
     try:
-        reviews = gh_api_paginated(f"repos/{slug}/pulls/{pr_num}/reviews?per_page=100", timeout=30, retries=1)
+        reviews = reviews_fut.result()
         meta["reviews"] = [item for item in (_normalize_review(review) for review in reviews) if item]
         latest_by_user = {}
         for review in meta["reviews"]:
@@ -230,31 +276,62 @@ def fetch_pr_meta(pr_num: int):
     except Exception:
         pass
     try:
-        comments = gh_api_paginated(f"repos/{slug}/issues/{pr_num}/comments?per_page=100", timeout=30, retries=1)
+        comments = comments_fut.result()
         meta["comments"] = [item for item in (_normalize_comment(comment) for comment in comments) if item]
     except Exception:
         pass
     try:
-        review_comments = gh_api_paginated(f"repos/{slug}/pulls/{pr_num}/comments?per_page=100", timeout=30, retries=1)
+        review_comments = review_comments_fut.result()
         meta["review_comments"] = [
             item for item in (_normalize_review_comment(comment) for comment in review_comments) if item
         ]
     except Exception:
         pass
+    _PR_META_CACHE[key] = {"ts": now, "data": meta}
     return meta
 
 
+def invalidate_pr_meta(pr_num=None):
+    if pr_num is None:
+        _PR_META_CACHE.clear()
+        return
+    try:
+        _PR_META_CACHE.pop(int(pr_num), None)
+    except (TypeError, ValueError):
+        _PR_META_CACHE.pop(pr_num, None)
+
+
 def fetch_issue_meta(issue_num):
+    # Short-TTL cache: re-selecting the same issue within ~30s skips the
+    # 1-2s round-trip entirely and feels instant in the dashboard.
+    try:
+        key = int(issue_num)
+    except (TypeError, ValueError):
+        key = issue_num
+    cached = _ISSUE_META_CACHE.get(key)
+    now = time.time()
+    if cached and now - cached["ts"] < _ISSUE_META_TTL:
+        return cached["data"]
+
     slug = github_repo_slug()
-    raw = gh_api_json(f"repos/{slug}/issues/{issue_num}", timeout=15, retries=2)
+    # The two gh API calls are independent — run them in parallel so the user
+    # waits for max(meta, comments) ~= 1s instead of the sum ~= 2s.
+    meta_future = _DETAIL_EXECUTOR.submit(
+        gh_api_json, f"repos/{slug}/issues/{issue_num}", 15, 2
+    )
+    comments_future = _DETAIL_EXECUTOR.submit(
+        gh_api_paginated, f"repos/{slug}/issues/{issue_num}/comments?per_page=100", 30, 1
+    )
+    raw = meta_future.result()
+    comments = comments_future.result()
+
     labels = [
         label.get("name")
         for label in raw.get("labels", [])
         if isinstance(label, dict) and label.get("name")
     ]
-    comments = gh_api_paginated(f"repos/{slug}/issues/{issue_num}/comments?per_page=100", timeout=30, retries=1)
     body = raw.get("body") or ""
-    return {
+    data = {
         "number": raw.get("number"),
         "body": body,
         "title": raw.get("title") or "",
@@ -274,6 +351,19 @@ def fetch_issue_meta(issue_num):
         "comments": [item for item in (_normalize_comment(comment) for comment in comments) if item],
         "milestone": _normalize_milestone(raw.get("milestone")),
     }
+    _ISSUE_META_CACHE[key] = {"ts": now, "data": data}
+    return data
+
+
+def invalidate_issue_meta(issue_num=None):
+    """Drop cached issue detail so the next fetch reloads from GitHub."""
+    if issue_num is None:
+        _ISSUE_META_CACHE.clear()
+        return
+    try:
+        _ISSUE_META_CACHE.pop(int(issue_num), None)
+    except (TypeError, ValueError):
+        _ISSUE_META_CACHE.pop(issue_num, None)
 
 
 def fetch_issue_body(issue_num: str):
@@ -454,6 +544,8 @@ def invalidate_caches():
     _ISSUES_CACHE["ts"] = 0
     _PRS_CACHE["ts"] = 0
     _NOTIFS_CACHE["ts"] = 0
+    _ISSUE_META_CACHE.clear()
+    _PR_META_CACHE.clear()
 
 
 def _normalize_notification(raw):

@@ -398,6 +398,18 @@ export default function App() {
     await load();
   }
 
+  async function handleRefreshNotifications() {
+    setNotifsLoading(true);
+    try {
+      const res = await fetchNotifications();
+      setNotifications(res.notifications || []);
+    } catch {
+      // silently ignore
+    } finally {
+      setNotifsLoading(false);
+    }
+  }
+
   async function handleBatchClaimNext() {
     const batch = issues.filter((issue) => issue.claim_next && !issue.in_progress).slice(0, 3);
     if (!batch.length) return;
@@ -412,7 +424,6 @@ export default function App() {
 
   const selectedIssueActions = selectedIssue ? (
     <>
-      <button onClick={() => void handleClaim(selectedIssue)}>Claim issue</button>
       <button onClick={() => void handleReviewIssue(selectedIssue)}>Review issue</button>
       <button onClick={() => void launchIssueShell(selectedIssue)}>Open terminal</button>
     </>
@@ -587,6 +598,8 @@ export default function App() {
           onBatchReview={() => void handleBatchReviewVisible()}
           onBatchClaimNext={() => void handleBatchClaimNext()}
           onPruneMerged={() => void handlePruneMergedWorktrees()}
+          notifications={notifications}
+          onRefreshNotifications={() => void handleRefreshNotifications()}
         />
         )}
 

@@ -43,6 +43,8 @@ export function useDashboardData(issueFilter: IssueFilter) {
   const loadTimer = useRef<number | null>(null);
   const loadSeq = useRef(0);
   const selectionRef = useRef(selection);
+  const issuesRef = useRef<Issue[]>([]);
+  const prsRef = useRef<PullRequest[]>([]);
   const hasAutoSelectedRef = useRef(selection.kind !== 'none');
   useEffect(() => {
     selectionRef.current = selection;
@@ -56,6 +58,8 @@ export function useDashboardData(issueFilter: IssueFilter) {
   const ptys = snapshot?.ptys || [];
   const agents = snapshot?.agents || [];
   const defaultAgent = snapshot?.defaultAgent || 'codex';
+  issuesRef.current = issues;
+  prsRef.current = prs;
 
   const visibleIssues = useMemo(() => {
     if (issueFilter === 'all') return issues;
@@ -164,54 +168,74 @@ export function useDashboardData(issueFilter: IssueFilter) {
     }
   }, [milestones, selection]);
 
+  // Fetch issue detail when the SELECTED issue changes — not on every snapshot
+  // poll. Re-running on every `issues` change would clobber loaded comments
+  // with the bare snapshot version every 4s, causing a visible flash.
   useEffect(() => {
-    if (selection.kind === 'issue' && Number.isFinite(selection.id)) {
-      const issue = issues.find((it) => it.number === selection.id) || null;
-      setIssueDetail(issue);
-      setIssueBody(issue?.body || '');
-      let cancelled = false;
-      void fetchIssue(selection.id)
-        .then((detail) => {
-          if (cancelled) return;
-          setIssueDetail({ ...(issue || detail), ...detail });
-          setIssueBody(detail.body || '');
-        })
-        .catch((err) => setIssueBody(err instanceof Error ? err.message : String(err)));
-      return () => {
-        cancelled = true;
-      };
+    if (selection.kind !== 'issue' || !Number.isFinite(selection.id)) {
+      setIssueDetail(null);
+      return;
     }
-    setIssueDetail(null);
-  }, [selection, issues]);
+    const targetId = selection.id;
+    setIssueDetail((prev) => {
+      if (prev?.number === targetId) return prev;
+      const snapIssue = issuesRef.current.find((it) => it.number === targetId) || null;
+      setIssueBody(snapIssue?.body || '');
+      return snapIssue;
+    });
+    let cancelled = false;
+    void fetchIssue(targetId)
+      .then((detail) => {
+        if (cancelled || selectionRef.current.kind !== 'issue' || selectionRef.current.id !== targetId) return;
+        const snapIssue = issuesRef.current.find((it) => it.number === targetId) || null;
+        setIssueDetail({ ...(snapIssue || detail), ...detail });
+        setIssueBody(detail.body || '');
+      })
+      .catch((err) => {
+        if (!cancelled) setIssueBody(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selection.kind, selection.kind === 'issue' ? selection.id : null]);
 
+  // Fetch PR detail + diff when the SELECTED pr changes — not on every poll.
   useEffect(() => {
-    if (selection.kind === 'pr' && Number.isFinite(selection.id)) {
-      const pr = prs.find((it) => it.number === selection.id);
-      setPrDetail(pr || null);
-      if (pr && Number.isFinite(pr.number)) {
-        let cancelled = false;
-        void fetchPr(pr.number)
-          .then((detail) => {
-            if (!cancelled) setPrDetail({ ...pr, ...detail });
-          })
-          .catch(() => {
-            /* keep the snapshot PR if detail fetch fails */
-          });
-        void fetchPrDiff(pr.number)
-          .then((data) => {
-            if (!cancelled) setPrDiff(data.diff);
-          })
-          .catch((err) => {
-            if (!cancelled) setPrDiff(err instanceof Error ? err.message : String(err));
-          });
-        return () => {
-          cancelled = true;
-        };
-      }
+    if (selection.kind !== 'pr' || !Number.isFinite(selection.id)) {
+      setPrDetail(null);
+      setPrDiff('');
+      return;
     }
-    setPrDetail(null);
-    setPrDiff('');
-  }, [selection, prs]);
+    const targetId = selection.id;
+    setPrDetail((prev) => {
+      if (prev?.number === targetId) return prev;
+      const snapPr = prsRef.current.find((it) => it.number === targetId) || null;
+      setPrDiff('');
+      return snapPr;
+    });
+    let cancelled = false;
+    void fetchPr(targetId)
+      .then((detail) => {
+        if (cancelled || selectionRef.current.kind !== 'pr' || selectionRef.current.id !== targetId) return;
+        const snapPr = prsRef.current.find((it) => it.number === targetId) || null;
+        setPrDetail({ ...(snapPr || detail), ...detail });
+      })
+      .catch(() => {
+        /* keep the snapshot PR if detail fetch fails */
+      });
+    void fetchPrDiff(targetId)
+      .then((data) => {
+        if (cancelled || selectionRef.current.kind !== 'pr' || selectionRef.current.id !== targetId) return;
+        setPrDiff(data.diff);
+      })
+      .catch((err) => {
+        if (cancelled || selectionRef.current.kind !== 'pr' || selectionRef.current.id !== targetId) return;
+        setPrDiff(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selection.kind, selection.kind === 'pr' ? selection.id : null]);
 
   useEffect(() => {
     if (selection.kind === 'file') {
