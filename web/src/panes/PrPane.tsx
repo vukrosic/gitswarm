@@ -27,6 +27,7 @@ function CiStatusBadge({ name, status }: { name: string; status: string }) {
 interface PrPaneProps {
   pr: PullRequest;
   diff: string;
+  onOpenGitHub: () => void;
   onReview: () => void;
   onMerge: () => void;
   onFixCi: () => void;
@@ -86,7 +87,7 @@ function ReviewCommentBlock({ comment }: { comment: GitHubReviewComment }) {
   );
 }
 
-export function PrPane({ pr, diff, onReview, onMerge, onFixCi }: PrPaneProps) {
+export function PrPane({ pr, diff, onOpenGitHub, onReview, onMerge, onFixCi }: PrPaneProps) {
   const chips = [...(pr.labels || [])];
   const ciChecks = usePrCiStatus(pr.number);
   const ciChips = ciChecks.length > 0 ? ciChecks.map((c) => (
@@ -112,6 +113,7 @@ export function PrPane({ pr, diff, onReview, onMerge, onFixCi }: PrPaneProps) {
         ciChips={ciChips}
         actions={
           <>
+            <Button variant="outline" size="sm" onClick={onOpenGitHub}>Open on GitHub</Button>
             <Button variant="outline" size="sm" onClick={onReview}>Review</Button>
             <Button variant="primary" size="sm" onClick={onMerge}>Merge</Button>
             <Button variant="outline" size="sm" onClick={onFixCi}>Fix CI</Button>

@@ -1,6 +1,7 @@
 """Tests for github_remote — GH API helpers and normalization."""
 import unittest
 
+import github as gh_mod
 from backend import github_remote as gr_mod
 
 
@@ -158,6 +159,22 @@ class NormalizeReviewTests(unittest.TestCase):
         self.assertEqual(r["id"], 100)
         self.assertEqual(r["author"], "reviewer1")
         self.assertEqual(r["state"], "APPROVED")
+
+
+class ReviewerVerdictTests(unittest.TestCase):
+    def test_extracts_verdict_block(self):
+        text = """noise\n# Reviewer-agent verdict\n**Model:** codex\n**Verdict:** approve\n\n## Verdict reasoning\nLooks good.\n──── exit banner"""
+        body = gh_mod.extract_reviewer_verdict(text)
+        self.assertIn("Reviewer-agent verdict", body)
+        self.assertNotIn("exit banner", body)
+
+    def test_maps_approve(self):
+        text = "# Reviewer-agent verdict\n**Verdict:** approve\n"
+        self.assertEqual(gh_mod.review_verdict_mode(text), "approve")
+
+    def test_maps_reject_to_request_changes(self):
+        text = "# Reviewer-agent verdict\n**Verdict:** reject\n"
+        self.assertEqual(gh_mod.review_verdict_mode(text), "request-changes")
 
 
 if __name__ == "__main__":

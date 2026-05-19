@@ -193,6 +193,12 @@ export default function App() {
     setSelection({ kind: 'issue', id: issue.number });
   }
 
+  function openPrInGitHub(pr: PullRequest) {
+    if (pr.url) {
+      window.open(pr.url, '_blank', 'noopener,noreferrer');
+    }
+  }
+
   async function launchIssueShell(issue: Issue, focus = true) {
     const result = await run(`claim #${issue.number}`, async () => {
       return sendIssueLaunch(issue.number, selectedAgent, 'issue-shell') as Promise<LaunchResult>;
@@ -588,6 +594,7 @@ export default function App() {
           onSaveIssue={(issue) => void handleEditIssue(issue)}
           onDeleteIssue={(issue) => void handleDeleteIssue(issue)}
           onFocusMilestoneIssue={(issue) => void handleFocusMilestoneIssue(issue)}
+          onOpenPrGitHub={(pr) => void openPrInGitHub(pr)}
           onReviewPr={(pr) => void handleReviewPr(pr)}
           onMergePr={(pr) => void handleMergePr(pr)}
           onFixCi={(pr) => void handleFixCi(pr)}

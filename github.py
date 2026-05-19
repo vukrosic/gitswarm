@@ -444,13 +444,8 @@ def prepare_issue_review(issue_num: int):
     }
 
 
-def extract_issue_review_comment(text: str):
-    """Pull the markdown verdict block out of the PTY transcript.
-
-    The issue reviewer prompt requires the verdict to start with
-    `# Reviewer-agent verdict`. We trim any wrapper noise before that marker
-    and stop before the server-side exit banner if it appears.
-    """
+def extract_reviewer_verdict(text: str):
+    """Pull the markdown verdict block out of a reviewer PTY transcript."""
     if not text:
         return ""
     start = text.find("# Reviewer-agent verdict")
@@ -461,6 +456,24 @@ def extract_issue_review_comment(text: str):
     if end >= 0:
         tail = tail[:end]
     return tail.strip()
+
+
+def review_verdict_mode(text: str):
+    """Map a reviewer verdict to the closest GitHub PR review mode."""
+    body = extract_reviewer_verdict(text)
+    match = re.search(r"\*\*Verdict:\*\*\s*(approve|request-changes|reject)\b", body, re.IGNORECASE)
+    if not match:
+        return "comment"
+    verdict = match.group(1).lower()
+    if verdict == "approve":
+        return "approve"
+    if verdict in ("request-changes", "reject"):
+        return "request-changes"
+    return "comment"
+
+
+def extract_issue_review_comment(text: str):
+    return extract_reviewer_verdict(text)
 
 
 def prepare_merge(pr_num: int):
@@ -535,7 +548,7 @@ def spawn_review(pr_num: int):
     # Match the implementer: codex with gpt-5.4-mini for the verdict generation.
     # The reviewer agent doesn't need network — the diff + issue body are
     # already embedded in the prompt; orchestrate.sh captures stdout and posts
-    # it via `gh pr comment` itself.
+    # the verdict to GitHub itself.
     env = os.environ.copy()
     env.setdefault("REVIEWER", "codex")
     env.setdefault("CODEX_MODEL", CODEX_MODEL)

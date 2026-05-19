@@ -701,8 +701,7 @@ def _handle_agent_prompt(handler, payload, rows, cols, send_json_fn):
 def _handle_pr_review(handler, payload, rows, cols, send_json_fn):
     from github import (
         spawn_pty, resolve_agent, build_agent_cmd, agent_short,
-        REPO_ROOT, STATE_DIR, prepare_pr_review,
-        gh_error,
+        REPO_ROOT, prepare_pr_review,
     )
     from backend.pty_client import USER_SHELL
     import shlex
@@ -714,7 +713,6 @@ def _handle_pr_review(handler, payload, rows, cols, send_json_fn):
     if prep.get("error"):
         return send_json_fn(handler, prep, 400)
     prompt_file = prep["prompt_file"]
-    review_out = STATE_DIR / f"review-{pr}.md"
 
     agent = resolve_agent(
         payload.get("agent"),
@@ -724,36 +722,35 @@ def _handle_pr_review(handler, payload, rows, cols, send_json_fn):
     )
     agent_cmd = build_agent_cmd(agent, f"$(cat {shlex.quote(prompt_file)})")
 
-    pr_url_file = STATE_DIR / f"review-{pr}.url"
-    pr_url_file.unlink(missing_ok=True)
     env_extra = {
         "PR_NUMBER": str(pr),
-        "REVIEW_OUT": str(review_out),
-        "REVIEW_URL_FILE": str(pr_url_file),
         "PROMPT_FILE": prompt_file,
         "PS1": "\\[\\e[35m\\]review·PR#" + str(pr) + "\\[\\e[0m\\]:\\W$ ",
     }
     wrapper = (
-        'touch $REVIEW_OUT; '
         'echo "──── starting {bin} ({yolo_short}) review of PR #{pr} ────"; '
         'echo "      agent:  {agent_label}"; '
         'echo "      model:  {model}"; '
         'echo "      prompt: $PROMPT_FILE"; '
-        'echo "      out:    $REVIEW_OUT  (agent writes verdict here)"; '
+        'echo "      out:    stdout  (wrapper will post the verdict to GitHub)"; '
         'echo "────"; '
-        '{agent_cmd}; '
+        'review_text="$({agent_cmd} 2>&1 | tee /dev/tty)"; '
         'ec=$?; '
         'echo; '
         'echo "──── {bin} exited (code $ec) ────"; '
-        'if [ -s "$REVIEW_OUT" ]; then '
-            'echo "  $REVIEW_OUT has $(wc -l < $REVIEW_OUT) lines — posting to PR #{pr}…"; '
-            'url=$(gh pr comment {pr} -F $REVIEW_OUT 2>&1); '
+        'review_body="$(printf %s "$review_text" | python3 -c \'import sys; from github import extract_reviewer_verdict; sys.stdout.write(extract_reviewer_verdict(sys.stdin.read()))\')"; '
+        'review_mode="$(printf %s "$review_text" | python3 -c \'import sys; from github import review_verdict_mode; sys.stdout.write(review_verdict_mode(sys.stdin.read()))\')"; '
+        'if [ -n "$review_body" ]; then '
+            'case "$review_mode" in '
+                'approve) review_flag="--approve" ;; '
+                'request-changes) review_flag="--request-changes" ;; '
+                '*) review_flag="--comment" ;; '
+            'esac; '
+            'echo "  posting GitHub PR review (mode: $review_mode)…"; '
+            'url=$(printf %s "$review_body" | gh pr review {pr} $review_flag --body-file - 2>&1); '
             'echo "  $url"; '
-            'echo "$url" | grep -Eo \'https://github.com/[^ ]+\' | head -1 > $REVIEW_URL_FILE; '
-            'echo "  comment url saved to $REVIEW_URL_FILE"; '
         'else '
-            'echo "  $REVIEW_OUT is empty — agent did not produce a verdict file."; '
-            'echo "  to post manually: gh pr comment {pr} -F $REVIEW_OUT (after writing it)"; '
+            'echo "  no verdict block found in agent output — nothing posted."; '
         'fi; '
         'echo; '
         'exec {shell} -i'
@@ -781,8 +778,6 @@ def _handle_pr_review(handler, payload, rows, cols, send_json_fn):
         "agent": agent["id"],
         "model": agent.get("model"),
         "prompt_file": prompt_file,
-        "review_out": str(review_out),
-        "review_url_file": str(pr_url_file),
     })
 
 
