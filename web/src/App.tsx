@@ -48,6 +48,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<GitHubNotification[]>([]);
   const [notifsLoading, setNotifsLoading] = useState(false);
   const codeMtimeRef = useRef(0);
+  const ptyInputQueuesRef = useRef<Record<string, Promise<void>>>({});
   const {
     snapshot,
     loading,
@@ -148,6 +149,23 @@ export default function App() {
     } finally {
       setBusy('');
     }
+  }
+
+  function queuePtyInput(sid: string, value: string) {
+    const previous = ptyInputQueuesRef.current[sid] || Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(() => ptyInput(sid, value))
+      .then(() => undefined)
+      .catch((err) => {
+        console.warn('pty input failed', sid, err);
+      });
+    ptyInputQueuesRef.current[sid] = next;
+    void next.finally(() => {
+      if (ptyInputQueuesRef.current[sid] === next) {
+        delete ptyInputQueuesRef.current[sid];
+      }
+    });
   }
 
   function shouldOpenInDock(pty: Pick<PtySession, 'kind'> | null | undefined) {
@@ -322,14 +340,14 @@ export default function App() {
     });
   }
 
-  async function handleTypePty(value: string) {
+  function handleTypePty(value: string) {
     if (selection.kind !== 'pty') return;
-    await ptyInput(selection.id, value);
+    queuePtyInput(selection.id, value);
   }
 
-  async function handleDockType(value: string) {
+  function handleDockType(value: string) {
     if (!dockPtyId) return;
-    await ptyInput(dockPtyId, value);
+    queuePtyInput(dockPtyId, value);
   }
 
   async function handleDockClose() {

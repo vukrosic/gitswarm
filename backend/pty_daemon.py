@@ -51,10 +51,15 @@ async def handle_client(reader, writer):
             rows = int(req.get("rows", 30))
             cols = int(req.get("cols", 120))
             meta = req.get("meta")
-            sess = pty_runtime.spawn_pty(
+            sess = await asyncio.to_thread(
+                pty_runtime.spawn_pty,
                 argv if isinstance(argv, list) else shlex.split(argv),
-                cwd=cwd, env_extra=env_extra, label=label,
-                rows=rows, cols=cols, meta=meta,
+                cwd=cwd,
+                env_extra=env_extra,
+                label=label,
+                rows=rows,
+                cols=cols,
+                meta=meta,
             )
             out = {"ok": True, "data": {
                 "sid": sess["sid"], "label": sess["label"], "cwd": sess["cwd"],
@@ -63,7 +68,9 @@ async def handle_client(reader, writer):
         elif cmd == "read":
             offset = int(req.get("offset", 0))
             timeout = float(req.get("timeout", 20))
-            res = pty_runtime.pty_read(sid, offset, timeout=timeout)
+            # Long-poll reads can wait for output. Keep them off the asyncio
+            # event loop so input/write requests are not stuck behind a stream.
+            res = await asyncio.to_thread(pty_runtime.pty_read, sid, offset, timeout=timeout)
             if res is None:
                 out = {"ok": False, "error": "unknown sid"}
             else:
@@ -78,31 +85,31 @@ async def handle_client(reader, writer):
 
         elif cmd == "write":
             data_str = req.get("data", "")
-            ok = pty_runtime.pty_write(sid, data_str.encode("utf-8"))
+            ok = await asyncio.to_thread(pty_runtime.pty_write, sid, data_str.encode("utf-8"))
             out = {"ok": ok}
 
         elif cmd == "resize":
             rows = int(req.get("rows", 30))
             cols = int(req.get("cols", 120))
-            ok = pty_runtime.pty_resize(sid, rows, cols)
+            ok = await asyncio.to_thread(pty_runtime.pty_resize, sid, rows, cols)
             out = {"ok": ok}
 
         elif cmd == "rename":
             label = req.get("label", "")
-            ok = pty_runtime.pty_rename(sid, label)
+            ok = await asyncio.to_thread(pty_runtime.pty_rename, sid, label)
             out = {"ok": ok}
 
         elif cmd == "kill":
-            ok = pty_runtime.kill_pty(sid)
+            ok = await asyncio.to_thread(pty_runtime.kill_pty, sid)
             out = {"ok": ok}
 
         elif cmd == "delete":
-            ok = pty_runtime.delete_pty(sid)
+            ok = await asyncio.to_thread(pty_runtime.delete_pty, sid)
             out = {"ok": ok}
 
         elif cmd == "list":
-            pty_runtime.reap_dead_ptys()
-            sessions = pty_runtime.list_ptys()
+            await asyncio.to_thread(pty_runtime.reap_dead_ptys)
+            sessions = await asyncio.to_thread(pty_runtime.list_ptys)
             out = {"ok": True, "data": {"sessions": sessions}}
 
         elif cmd == "shutdown":

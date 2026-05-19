@@ -345,6 +345,8 @@ export function TerminalDock({
             {pty ? (
               <div
                 ref={terminalRef}
+                tabIndex={-1}
+                onClick={focusTerminal}
                 className="flex min-h-0 flex-1 cursor-text flex-col gap-2 overflow-hidden rounded-2xl border border-border bg-background/80 p-3 outline-none transition-colors focus-visible:border-primary/70 focus-visible:shadow-[0_0_0_2px_hsl(var(--primary)/0.16)]"
               >
                 <pre
@@ -356,9 +358,9 @@ export function TerminalDock({
                 </pre>
                 <Textarea
                   ref={inputRef}
-                  readOnly
                   value=""
                   aria-label="Manual terminal input"
+                  onChange={() => {}}
                   onFocus={focusTerminal}
                   onMouseDown={focusTerminal}
                   onKeyDown={captureKeyDown}
