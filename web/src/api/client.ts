@@ -126,6 +126,10 @@ export function deleteIssue(issue: number) {
   return requestJson('/api/issue/delete', { method: 'POST', json: { issue } });
 }
 
+export function closeMilestone(number: number) {
+  return requestJson('/api/milestone/close', { method: 'POST', json: { number } });
+}
+
 export function issueCleanup(staleDays = 7, dryRun = false) {
   return requestJson('/api/state/cleanup', { method: 'POST', json: { stale_days: staleDays, dry_run: dryRun } });
 }

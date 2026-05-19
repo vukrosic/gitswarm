@@ -482,6 +482,17 @@ def list_milestones():
         return [{"error": str(e)}]
 
 
+def close_milestone(number: int):
+    slug = github_repo_slug()
+    try:
+        run_gh(["api", "--method", "PATCH", f"repos/{slug}/milestones/{number}",
+                "--field", "state=closed"], timeout=20, retries=2)
+        invalidate_caches()
+        return {"closed": True, "number": number}
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or e.stdout or "").strip() or "close milestone failed"}
+
+
 def list_prs():
     if _PRS_CACHE["data"] and time.time() - _PRS_CACHE["ts"] < 20:
         return _PRS_CACHE["data"]

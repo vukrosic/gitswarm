@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import type { Issue, Milestone } from '../types';
 import { fmtTime } from '../lib/time';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PaneHeader, PaneShell } from './_shared';
+import { closeMilestone } from '@/api/client';
 
 interface MilestonePaneProps {
   milestone: Milestone;
@@ -16,10 +18,21 @@ function toneForState(state: string) {
 }
 
 export function MilestonePane({ milestone, issues, onFocusIssue, onOpenGitHub }: MilestonePaneProps) {
+  const [closing, setClosing] = useState(false);
   const relatedIssues = issues.filter((issue) => issue.milestone?.number === milestone.number);
   const dueAt = milestone.due_on ? new Date(milestone.due_on).toLocaleDateString() : 'no due date';
   const createdAt = milestone.created_at ? fmtTime(Date.parse(milestone.created_at) / 1000) : '';
   const updatedAt = milestone.updated_at ? fmtTime(Date.parse(milestone.updated_at) / 1000) : '';
+
+  async function handleClose() {
+    if (closing) return;
+    setClosing(true);
+    try {
+      await closeMilestone(milestone.number);
+    } finally {
+      setClosing(false);
+    }
+  }
 
   return (
     <PaneShell>
@@ -35,6 +48,16 @@ export function MilestonePane({ milestone, issues, onFocusIssue, onOpenGitHub }:
         ].filter(Boolean) as string[]}
         actions={
           <>
+            {milestone.state === 'open' && (
+              <Button
+                variant={closing ? 'muted' : 'destructive'}
+                size="sm"
+                onClick={handleClose}
+                disabled={closing}
+              >
+                {closing ? 'Closing…' : 'Close milestone'}
+              </Button>
+            )}
             <Button variant="primary" size="sm" onClick={onOpenGitHub} disabled={!milestone.url}>
               Open on GitHub
             </Button>

@@ -44,7 +44,7 @@ def dispatch_get(handler, u, qs, send_json_fn):
         from github import list_prs
         return send_json_fn(handler, {"prs": list_prs()})
     if path == "/api/pty/list":
-        from github import reap_dead_ptys, list_ptys
+        from backend.pty_client import reap_dead_ptys, list_ptys
         reap_dead_ptys()
         return send_json_fn(handler, {"sessions": list_ptys()})
     if path == "/api/pty/stream":
@@ -121,7 +121,7 @@ def _handle_agents(handler, send_json_fn):
 
 
 def _handle_pty_stream(handler, qs, send_json_fn):
-    from github import pty_read
+    from backend.pty_client import pty_read
     sid = unquote(_query_value(qs, "sid"))
     try:
         offset = max(0, int(_query_value(qs, "offset", "0") or 0))
@@ -209,6 +209,8 @@ def dispatch_post(handler, u, payload, send_json_fn):
     # Issue CRUD — delegate to github
     if path in ("/api/issue/update", "/api/issue/delete", "/api/issue/create"):
         return _handle_issue(handler, path, payload, send_json_fn)
+    if path == "/api/milestone/close":
+        return _handle_milestone_close(handler, payload, send_json_fn)
     # Fall-through to 404
     handler.send_response(404)
     handler.end_headers()
@@ -248,7 +250,7 @@ def _handle_merge(handler, payload, send_json_fn):
 
 
 def _handle_pty_input(handler, payload, send_json_fn):
-    from github import pty_write
+    from backend.pty_client import pty_write
     sid = payload.get("sid", "")
     data = payload.get("data", "")
     if not isinstance(data, str):
@@ -258,7 +260,7 @@ def _handle_pty_input(handler, payload, send_json_fn):
 
 
 def _handle_pty_resize(handler, payload, send_json_fn):
-    from github import pty_resize
+    from backend.pty_client import pty_resize
     sid = payload.get("sid", "")
     try:
         rows = int(payload.get("rows"))
@@ -270,21 +272,21 @@ def _handle_pty_resize(handler, payload, send_json_fn):
 
 
 def _handle_pty_close(handler, payload, send_json_fn):
-    from github import kill_pty
+    from backend.pty_client import kill_pty
     sid = payload.get("sid", "")
     ok = kill_pty(sid)
     return send_json_fn(handler, {"ok": ok})
 
 
 def _handle_pty_delete(handler, payload, send_json_fn):
-    from github import delete_pty
+    from backend.pty_client import delete_pty
     sid = payload.get("sid", "")
     ok = delete_pty(sid)
     return send_json_fn(handler, {"ok": ok})
 
 
 def _handle_pty_rename(handler, payload, send_json_fn):
-    from github import pty_rename
+    from backend.pty_client import pty_rename
     sid = payload.get("sid", "")
     label = payload.get("label", "")
     if not sid:
@@ -346,6 +348,17 @@ def _handle_state_cleanup(handler, payload, send_json_fn):
         "kept_count": len(kept),
         "freed_bytes": total_freed,
     })
+
+
+def _handle_milestone_close(handler, payload, send_json_fn):
+    from backend.github_remote import close_milestone
+    try:
+        number = int(payload.get("number"))
+    except (TypeError, ValueError):
+        return send_json_fn(handler, {"error": "number must be int"}, 400)
+    result = close_milestone(number)
+    status = 200 if result.get("closed") else 400
+    return send_json_fn(handler, result, status)
 
 
 def _handle_issue(handler, path, payload, send_json_fn):
