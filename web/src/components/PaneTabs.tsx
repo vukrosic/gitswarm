@@ -1,4 +1,4 @@
-import { FileText, Flag, GitBranch, GitPullRequest, Grid, ListChecks, Rocket, Terminal as TerminalIcon } from 'lucide-react';
+import { FileText, Flag, GitBranch, GitPullRequest, Grid, ListChecks, Rocket, Terminal as TerminalIcon, Bell } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 import { cn } from '@/lib/utils';
 import type { Pane } from '../types/dashboard';
@@ -14,6 +14,7 @@ export const PANES: Array<{ key: Pane; label: string; icon: IconType }> = [
   { key: 'files', label: 'Files', icon: FileText },
   { key: 'launch', label: 'Launch', icon: Rocket },
   { key: 'agent-grid', label: 'Agent Grid', icon: Grid },
+  { key: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
 interface PaneTabsProps {

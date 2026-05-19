@@ -40,6 +40,13 @@ async function requestText(path: string): Promise<string> {
   return text;
 }
 
+export async function fetchNotifications(allRead = false, reason = 'owner') {
+  const params = new URLSearchParams({ all_read: String(allRead), reason });
+  return requestJson<{ notifications: import('../types').GitHubNotification[] }>(
+    `/api/notifications?${params}`,
+  );
+}
+
 export async function fetchSnapshot(): Promise<Snapshot> {
   const [issues, milestones, prs, worktrees, files, ptys, agents] = await Promise.all([
     requestJson<{ issues: Issue[] }>('/api/issues'),
@@ -48,7 +55,7 @@ export async function fetchSnapshot(): Promise<Snapshot> {
     requestJson<{ worktrees: Worktree[]; running?: RunningWorktree[] }>('/api/worktrees'),
     requestJson<{ files: FileEntry[] }>('/api/files'),
     requestJson<{ sessions: PtySession[] }>('/api/pty/list'),
-    requestJson<{ agents: Agent[]; default: string; code_mtime: number }>('/api/agents'),
+    requestJson<{ agents: Agent[]; default: string; code_mtime: number; code_mtime_path?: string }>('/api/agents'),
   ]);
   const runningNames = new Map(
     (worktrees.running || []).map((item) => [item.worktree, item] as const),
@@ -71,6 +78,7 @@ export async function fetchSnapshot(): Promise<Snapshot> {
     agents: agents.agents || [],
     defaultAgent: agents.default || 'codex',
     codeMtime: agents.code_mtime || 0,
+    codeMtimePath: agents.code_mtime_path || '',
   };
 }
 

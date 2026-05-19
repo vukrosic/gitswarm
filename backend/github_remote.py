@@ -11,6 +11,7 @@ STATE_DIR = None
 
 _ISSUES_CACHE = {"ts": 0, "data": None}
 _PRS_CACHE = {"ts": 0, "data": None}
+_NOTIFS_CACHE = {"ts": 0, "data": None}
 
 
 def init(repo_root: Path, state_dir: Path):
@@ -452,3 +453,52 @@ def list_prs():
 def invalidate_caches():
     _ISSUES_CACHE["ts"] = 0
     _PRS_CACHE["ts"] = 0
+    _NOTIFS_CACHE["ts"] = 0
+
+
+def _normalize_notification(raw):
+    if not isinstance(raw, dict):
+        return None
+    reason = raw.get("reason") or raw.get("reason", "")
+    subject = raw.get("subject") or {}
+    return {
+        "id": str(raw.get("id", "")),
+        "reason": reason,
+        "unread": bool(raw.get("unread", False)),
+        "updated_at": raw.get("updated_at") or "",
+        "subject_title": subject.get("title") or "",
+        "subject_type": subject.get("type") or "",
+        "subject_url": subject.get("url") or "",
+        "repository_name": (raw.get("repository") or {}).get("name") or "",
+        "repository_full_name": (raw.get("repository") or {}).get("full_name") or "",
+    }
+
+
+def list_notifications(all_read=False, reason="owner", pages=3):
+    """
+    Fetch GitHub notifications via `gh api /notifications`.
+    Returns a flat list of normalised notification objects, oldest first.
+    Cached for 30 s unless `all_read` or `reason` differ from cache key.
+    """
+    cache_key = (all_read, reason)
+    now = time.time()
+    if (
+        _NOTIFS_CACHE["data"] is not None
+        and _NOTIFS_CACHE.get("key") == cache_key
+        and now - _NOTIFS_CACHE["ts"] < 30
+    ):
+        return _NOTIFS_CACHE["data"]
+
+    params = []
+    if all_read:
+        params.append("all=true")
+    if reason:
+        params.append(f"reason={reason}")
+    qs = "&".join(params)
+    path = "/notifications" + (f"?{qs}" if qs else "")
+    raw = gh_api_json(path)
+    if isinstance(raw, dict) and "error" in raw:
+        return [{"error": raw["error"]}]
+    items = [_normalize_notification(n) for n in raw or [] if _normalize_notification(n)]
+    _NOTIFS_CACHE.update({"ts": now, "data": items, "key": cache_key})
+    return items

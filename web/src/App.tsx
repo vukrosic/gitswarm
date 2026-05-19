@@ -13,8 +13,9 @@ import {
   sendShellLaunch,
   updateIssue,
   issueCleanup,
+  fetchNotifications,
 } from './api';
-import type { Issue, Milestone, PullRequest, PtySession, Worktree } from './types';
+import type { GitHubNotification, Issue, Milestone, PullRequest, PtySession, Worktree } from './types';
 import type { IssueFilter, LaunchResult, Pane, Selection } from './types/dashboard';
 import { AppHeader } from './components/AppHeader';
 import { DashboardSidebar } from './components/DashboardSidebar';
@@ -44,6 +45,8 @@ export default function App() {
   const [issueDraftBody, setIssueDraftBody] = useState('');
   const [dockPtyId, setDockPtyId] = useState(() => localStorage.getItem('gitswarm.dockPtyId') || '');
   const [dockCollapsed, setDockCollapsed] = useState(() => localStorage.getItem('gitswarm.terminalDockCollapsed') === '1');
+  const [notifications, setNotifications] = useState<GitHubNotification[]>([]);
+  const [notifsLoading, setNotifsLoading] = useState(false);
   const codeMtimeRef = useRef(0);
   const {
     snapshot,
@@ -106,13 +109,21 @@ export default function App() {
 
   useEffect(() => {
     const codeMtime = snapshot?.codeMtime || 0;
+    const codeMtimePath = snapshot?.codeMtimePath || '';
     if (!codeMtime) return;
     if (codeMtimeRef.current && codeMtime > codeMtimeRef.current + 0.5) {
+      const delta = codeMtime - codeMtimeRef.current;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[gitswarm] auto-reload triggered: ${codeMtimePath || '<unknown>'} ` +
+          `changed (+${delta.toFixed(2)}s). prev=${codeMtimeRef.current.toFixed(2)} ` +
+          `next=${codeMtime.toFixed(2)}`,
+      );
       window.location.reload();
       return;
     }
     codeMtimeRef.current = codeMtime;
-  }, [snapshot?.codeMtime]);
+  }, [snapshot?.codeMtime, snapshot?.codeMtimePath]);
 
   useEffect(() => {
     if (!agents.length) return;

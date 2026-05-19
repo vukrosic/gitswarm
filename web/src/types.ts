@@ -44,6 +44,18 @@ export interface GitHubReviewComment extends GitHubComment {
   diff_hunk?: string;
 }
 
+export interface GitHubNotification {
+  id: string;
+  reason: string;
+  unread: boolean;
+  updated_at: string;
+  subject_title: string;
+  subject_type: string;
+  subject_url: string;
+  repository_name: string;
+  repository_full_name: string;
+}
+
 export interface Issue extends LabelledItem {
   number: number;
   title: string;
@@ -163,6 +175,7 @@ export interface Snapshot {
   agents: Agent[];
   defaultAgent: string;
   codeMtime: number;
+  codeMtimePath?: string;
 }
 
 export interface AgentGridState {

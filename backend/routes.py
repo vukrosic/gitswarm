@@ -35,6 +35,11 @@ def dispatch_get(handler, u, qs, send_json_fn):
     if path == "/api/milestones":
         from github import list_milestones
         return send_json_fn(handler, {"milestones": list_milestones()})
+    if path == "/api/notifications":
+        from github import list_notifications
+        all_read = qs.get("all_read", ["false"])[0] == "true"
+        reason = qs.get("reason", ["owner"])[0]
+        return send_json_fn(handler, {"notifications": list_notifications(all_read=all_read, reason=reason)})
     if path == "/api/prs":
         from github import list_prs
         return send_json_fn(handler, {"prs": list_prs()})
@@ -97,7 +102,7 @@ def _handle_pr_diff(handler, qs, send_json_fn):
 
 
 def _handle_agents(handler, send_json_fn):
-    from backend.reload import frontend_mtime
+    from backend.reload import frontend_mtime_detail
     from github import AGENTS, DEFAULT_AGENT
     import shutil
     out = []
@@ -109,8 +114,10 @@ def _handle_agents(handler, send_json_fn):
             "model": cfg.get("model") or "",
             "available": shutil.which(cfg["bin"]) is not None,
         })
+    mtime, newest = frontend_mtime_detail()
     return send_json_fn(handler, {"agents": out, "default": DEFAULT_AGENT,
-                                  "code_mtime": frontend_mtime()})
+                                  "code_mtime": mtime,
+                                  "code_mtime_path": newest})
 
 
 def _handle_pty_stream(handler, qs, send_json_fn):

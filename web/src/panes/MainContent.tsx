@@ -1,9 +1,10 @@
-import type { Agent, FileEntry, Issue, Milestone, PullRequest, PtySession, Snapshot, Worktree } from '../types';
+import type { Agent, FileEntry, GitHubNotification, Issue, Milestone, PullRequest, PtySession, Snapshot, Worktree } from '../types';
 import type { Pane } from '../types/dashboard';
 import { FilePane } from './FilePane';
 import { IssuePane } from './IssuePane';
 import { MilestonePane } from './MilestonePane';
 import { LaunchPane } from './LaunchPane';
+import { NotificationsPane } from './NotificationsPane';
 import { PrPane } from './PrPane';
 import { TerminalPane } from './TerminalPane';
 import { WorktreePane } from './WorktreePane';
@@ -35,6 +36,7 @@ interface MainContentProps {
   issueTitle: string;
   issueDraftBody: string;
   launchText: string;
+  notifications: GitHubNotification[];
   onIssueBodyChange: (value: string) => void;
   onPtyTextChange: (value: string) => void;
   onIssueTitleChange: (value: string) => void;
@@ -63,6 +65,7 @@ interface MainContentProps {
   onBatchReview: () => void;
   onBatchClaimNext: () => void;
   onPruneMerged: () => void;
+  onRefreshNotifications: () => void;
 }
 
 export function MainContent(props: MainContentProps) {
@@ -87,6 +90,8 @@ export function MainContent(props: MainContentProps) {
     issueTitle,
     issueDraftBody,
     launchText,
+    notifications,
+    onRefreshNotifications,
     onIssueBodyChange,
     onPtyTextChange,
     onIssueTitleChange,
@@ -200,6 +205,13 @@ export function MainContent(props: MainContentProps) {
           onBatchReview={onBatchReview}
           onBatchClaimNext={onBatchClaimNext}
           onPruneMerged={onPruneMerged}
+        />
+      ) : null}
+      {pane === 'notifications' ? (
+        <NotificationsPane
+          notifications={notifications}
+          loading={loading}
+          onRefresh={onRefreshNotifications}
         />
       ) : null}
     </main>
