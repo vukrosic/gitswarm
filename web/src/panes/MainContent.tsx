@@ -47,6 +47,7 @@ interface MainContentProps {
   onSaveIssue: (issue: Issue) => void;
   onDeleteIssue: (issue: Issue) => void;
   onFocusMilestoneIssue: (issue: Issue) => void;
+  onOpenPrGitHub: (pr: PullRequest) => void;
   onReviewPr: (pr: PullRequest) => void;
   onMergePr: (pr: PullRequest) => void;
   onFixCi: (pr: PullRequest) => void;
@@ -102,6 +103,7 @@ export function MainContent(props: MainContentProps) {
     onSaveIssue,
     onDeleteIssue,
     onFocusMilestoneIssue,
+    onOpenPrGitHub,
     onReviewPr,
     onMergePr,
     onFixCi,
@@ -159,6 +161,7 @@ export function MainContent(props: MainContentProps) {
         <PrPane
           pr={selectedPr}
           diff={prDiff}
+          onOpenGitHub={() => onOpenPrGitHub(selectedPr)}
           onReview={() => onReviewPr(selectedPr)}
           onMerge={() => onMergePr(selectedPr)}
           onFixCi={() => onFixCi(selectedPr)}

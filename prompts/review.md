@@ -24,11 +24,11 @@ You are an independent reviewer of a PR submitted by another coding agent agains
 
 ## How to deliver your verdict
 
-You have a writable env var `$REVIEW_OUT` pointing at an empty file. **Write your full verdict to that file** and then exit. The wrapper around you posts the file via `gh pr comment $PR_NUMBER -F $REVIEW_OUT` once you stop. Do NOT call `gh pr comment` yourself. Do NOT only echo the verdict to the chat — the chat is for thinking; the file is the deliverable.
+Write your full verdict directly to the terminal output and then exit. The wrapper around you captures the output and posts it to GitHub. Do NOT call `gh pr review` yourself. Do NOT write markdown files.
 
 ## Required output format
 
-Write to `$REVIEW_OUT` exactly this markdown structure. Omit sections only when they don't apply (e.g. no acceptance criteria in the issue → drop that section, don't fabricate items).
+Write your verdict exactly in this markdown structure in the terminal output. Omit sections only when they don't apply (e.g. no acceptance criteria in the issue → drop that section, don't fabricate items).
 
 ```markdown
 # Reviewer-agent verdict

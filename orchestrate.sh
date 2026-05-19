@@ -200,32 +200,57 @@ PYEOF
     return 0
   fi
 
-  local review_out="$STATE_DIR/review-$pr_num.md"
   # Reviewer needs Bash(gh:*) so it can fetch PR/issue context and post the
-  # verdict comment itself. We allowlist only `gh` and read tools — no
-  # general shell, no edits. acceptEdits is required to enable Bash at all
+  # verdict directly to GitHub itself. We allowlist only `gh` and read tools —
+  # no general shell, no edits. acceptEdits is required to enable Bash at all
   # in claude -p; allowedTools narrows the surface back down.
+  local review_text review_ec review_body review_mode review_flag
   case "$REVIEWER" in
     claude)
-      run_timeout "$AGENT_TIMEOUT" "$CLAUDE_BIN" -p \
-        "$(cat "$prompt_file")" \
-        --permission-mode acceptEdits \
-        --allowedTools "Bash(gh:*) Read Grep" \
-        > "$review_out"
+      set +e
+      review_text="$(
+        run_timeout "$AGENT_TIMEOUT" "$CLAUDE_BIN" -p \
+          "$(cat "$prompt_file")" \
+          --permission-mode acceptEdits \
+          --allowedTools "Bash(gh:*) Read Grep" \
+          2>&1
+      )"
+      review_ec=$?
+      set -e
       ;;
     codex)
-      run_timeout "$AGENT_TIMEOUT" "$CODEX_BIN" exec \
-        --sandbox workspace-write \
-        --skip-git-repo-check \
-        $codex_model_arg \
-        "$(cat "$prompt_file")" \
-        > "$review_out"
+      set +e
+      review_text="$(
+        run_timeout "$AGENT_TIMEOUT" "$CODEX_BIN" exec \
+          --sandbox workspace-write \
+          --skip-git-repo-check \
+          $codex_model_arg \
+          "$(cat "$prompt_file")" \
+          2>&1
+      )"
+      review_ec=$?
+      set -e
       ;;
     *) die "unknown REVIEWER: $REVIEWER";;
   esac
 
-  gh pr comment "$pr_num" --body-file "$review_out"
-  log "reviewer comment posted on PR #$pr_num → $review_out"
+  printf '%s\n' "$review_text"
+  log "reviewer exited with code $review_ec"
+
+  review_body="$(printf %s "$review_text" | python3 -c 'import sys; from github import extract_reviewer_verdict; sys.stdout.write(extract_reviewer_verdict(sys.stdin.read()))')"
+  review_mode="$(printf %s "$review_text" | python3 -c 'import sys; from github import review_verdict_mode; sys.stdout.write(review_verdict_mode(sys.stdin.read()))')"
+  if [ -n "$review_body" ]; then
+    case "$review_mode" in
+      approve) review_flag="--approve" ;;
+      request-changes) review_flag="--request-changes" ;;
+      *) review_flag="--comment" ;;
+    esac
+    log "posting GitHub PR review #$pr_num (mode: $review_mode)"
+    printf %s "$review_body" | gh pr review "$pr_num" $review_flag --body-file -
+    log "reviewer review posted on PR #$pr_num"
+  else
+    log "reviewer output did not contain a verdict block; nothing posted"
+  fi
 }
 
 run_full_loop() {
