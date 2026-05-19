@@ -14,8 +14,6 @@ REPO_NAME = REPO_ROOT.name
 STATE_DIR = REPO_ROOT / ".gitswarm" / "state"
 WORKTREES_DIR = REPO_ROOT / ".agent-worktrees"
 PROMPTS_DIR = PACKAGE_ROOT / "prompts"
-USER_SHELL = os.environ.get("SHELL", "/bin/bash")
-
 # Defaults for the per-issue interactive launcher. The "yolo" flag bypasses
 # codex's approval prompts and sandbox — only safe because each agent runs in
 # its own disposable worktree.
@@ -58,8 +56,7 @@ AGENTS = {
 }
 DEFAULT_AGENT = os.environ.get("GITSWARM_AGENT", "codex")
 
-from backend.pty_runtime import (
-    init as _init_pty_runtime,
+from backend.pty_client import (
     spawn_pty,
     pty_write,
     pty_resize,
@@ -82,6 +79,7 @@ from backend.github_remote import (
     gh_api_json,
     gh_api_text,
     fetch_pr_meta,
+    fetch_pr_ci_status,
     fetch_issue_meta,
     fetch_issue_body,
     update_issue,
@@ -95,7 +93,6 @@ from backend.github_remote import (
     invalidate_caches,
 )
 
-_init_pty_runtime(REPO_ROOT, USER_SHELL)
 _init_github_remote(REPO_ROOT, STATE_DIR)
 
 

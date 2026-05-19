@@ -431,6 +431,26 @@ def fetch_pr_diff(pr_num: int):
             raise RuntimeError(f"REST diff failed: {gh_error(rest_err)}; gh pr diff failed: {gh_error(diff_err)}")
 
 
+def fetch_pr_ci_status(pr_num: int):
+    slug = github_repo_slug()
+    raw = gh_api_json(f"repos/{slug}/pulls/{pr_num}", timeout=15, retries=2)
+    checks = raw.get("statusCheckRollup") or []
+    out = []
+    for c in checks if isinstance(checks, list) else []:
+        name = c.get("name") or c.get("context") or "check"
+        state = (c.get("conclusion") or c.get("status") or "").upper()
+        if state == "SUCCESS":
+            status = "pass"
+        elif state in ("FAILURE", "ERROR", "ACTION_REQUIRED"):
+            status = "fail"
+        elif state in ("IN_PROGRESS", "PENDING", "QUEUED", "REQUESTED"):
+            status = "pending"
+        else:
+            status = "unknown"
+        out.append({"name": name, "status": status})
+    return {"number": pr_num, "checks": out}
+
+
 def list_issues():
     if _ISSUES_CACHE["data"] and time.time() - _ISSUES_CACHE["ts"] < 20:
         return _ISSUES_CACHE["data"]

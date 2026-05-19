@@ -33,12 +33,14 @@ export function PaneHeader({
   title,
   meta,
   chips,
+  ciChips,
   actions,
 }: {
   eyebrow: string;
   title: string;
   meta?: ReactNode;
   chips?: string[];
+  ciChips?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
@@ -47,15 +49,14 @@ export function PaneHeader({
         <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</div>
         <h2 className="mt-1 text-xl font-semibold leading-tight tracking-tight text-foreground">{title}</h2>
         {meta ? <div className="mt-1.5 text-[11px] text-muted-foreground">{meta}</div> : null}
-        {chips && chips.length ? (
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {chips.map((label) => (
-              <Badge key={label} variant={chipVariant(label)}>
-                {label}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {chips && chips.length ? chips.map((label) => (
+            <Badge key={label} variant={chipVariant(label)}>
+              {label}
+            </Badge>
+          )) : null}
+          {ciChips}
+        </div>
       </div>
       {actions ? <div className="flex flex-wrap items-center justify-end gap-1.5">{actions}</div> : null}
     </header>

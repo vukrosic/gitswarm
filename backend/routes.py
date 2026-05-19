@@ -21,6 +21,8 @@ def dispatch_get(handler, u, qs, send_json_fn):
         return _handle_pr_meta(handler, qs, send_json_fn)
     if path == "/api/pr/diff":
         return _handle_pr_diff(handler, qs, send_json_fn)
+    if path == "/api/pr/ci-status":
+        return _handle_pr_ci_status(handler, qs, send_json_fn)
     if path == "/api/agents":
         return _handle_agents(handler, send_json_fn)
     if path == "/api/files":
@@ -101,6 +103,20 @@ def _handle_pr_diff(handler, qs, send_json_fn):
         return send_json_fn(handler, {"error": gh_error(e)}, 500)
 
 
+def _handle_pr_ci_status(handler, qs, send_json_fn):
+    from github import fetch_pr_ci_status, gh_error
+    try:
+        num = int(_query_value(qs, "num"))
+    except ValueError:
+        return send_json_fn(handler, {"error": "bad num"}, 400)
+    if not (1 <= num <= 9999):
+        return send_json_fn(handler, {"error": "bad num"}, 400)
+    try:
+        return send_json_fn(handler, fetch_pr_ci_status(num))
+    except Exception as e:
+        return send_json_fn(handler, {"error": gh_error(e)}, 500)
+
+
 def _handle_agents(handler, send_json_fn):
     from backend.reload import frontend_mtime_detail
     from github import AGENTS, DEFAULT_AGENT
@@ -131,7 +147,10 @@ def _handle_pty_stream(handler, qs, send_json_fn):
         timeout = max(1, min(25, int(_query_value(qs, "timeout", "15") or 15)))
     except ValueError:
         timeout = 15
-    res = pty_read(sid, offset, timeout=timeout)
+    try:
+        res = pty_read(sid, offset, timeout=timeout)
+    except Exception as e:
+        return send_json_fn(handler, {"error": str(e)}, 500)
     if res is None:
         return send_json_fn(handler, {"error": "unknown sid"}, 404)
     data, logical_len, alive, drop, reset = res
@@ -392,14 +411,14 @@ def _handle_issue(handler, path, payload, send_json_fn):
 
 def _handle_pty_new(handler, payload, send_json_fn):
     from github import (
-        spawn_shell_session, spawn_pty, pty_resize,
         resolve_agent, build_agent_cmd, agent_short,
-        USER_SHELL, REPO_ROOT, STATE_DIR,
+        REPO_ROOT, STATE_DIR,
         prepare_issue_worktree, live_issue_pty,
         prepare_pr_review, prepare_merge, prepare_ci_fix,
         prepare_proposal, prepare_issue_review,
         gh_error,
     )
+    from backend.pty_client import USER_SHELL, spawn_shell_session, spawn_pty, pty_resize
     import shlex
     from pathlib import Path
     kind = payload.get("kind", "shell")
@@ -448,7 +467,9 @@ def _handle_pty_new(handler, payload, send_json_fn):
 
 def _agent_wrapper(env_extra, agent, cwd_path, prompt_file, issue_num, prep,
                    shell_wrapper_fn, rows, cols, label, meta=None):
-    from github import spawn_pty, USER_SHELL, REPO_ROOT, agent_short, build_agent_cmd
+    from backend.pty_client import spawn_pty
+    from github import REPO_ROOT, agent_short, build_agent_cmd
+    from backend.pty_client import USER_SHELL
     import shlex
     wrapper = shell_wrapper_fn(
         bin=shlex.quote(agent["bin"]),
@@ -472,7 +493,8 @@ def _agent_wrapper(env_extra, agent, cwd_path, prompt_file, issue_num, prep,
 
 
 def _handle_agent_shell(handler, payload, rows, cols, send_json_fn):
-    from github import spawn_pty, resolve_agent, build_agent_cmd, agent_short, USER_SHELL, REPO_ROOT
+    from backend.pty_client import USER_SHELL, spawn_pty
+    from github import resolve_agent, build_agent_cmd, agent_short, REPO_ROOT
     import shlex
     from pathlib import Path
     cwd_in = payload.get("cwd")
@@ -539,10 +561,11 @@ def _handle_agent_shell(handler, payload, rows, cols, send_json_fn):
 
 def _handle_agent_prompt(handler, payload, rows, cols, send_json_fn):
     from github import (
-        spawn_pty, resolve_agent, build_agent_cmd, agent_short,
-        USER_SHELL, REPO_ROOT, STATE_DIR, prepare_issue_worktree,
+        resolve_agent, build_agent_cmd, agent_short,
+        REPO_ROOT, STATE_DIR, prepare_issue_worktree,
         live_issue_pty, gh_error,
     )
+    from backend.pty_client import USER_SHELL, spawn_pty
     import shlex, re, secrets
     from pathlib import Path
 
@@ -678,9 +701,10 @@ def _handle_agent_prompt(handler, payload, rows, cols, send_json_fn):
 def _handle_pr_review(handler, payload, rows, cols, send_json_fn):
     from github import (
         spawn_pty, resolve_agent, build_agent_cmd, agent_short,
-        USER_SHELL, REPO_ROOT, STATE_DIR, prepare_pr_review,
+        REPO_ROOT, STATE_DIR, prepare_pr_review,
         gh_error,
     )
+    from backend.pty_client import USER_SHELL
     import shlex
     try:
         pr = int(payload.get("pr"))
@@ -765,9 +789,10 @@ def _handle_pr_review(handler, payload, rows, cols, send_json_fn):
 def _handle_merge_pr(handler, payload, rows, cols, send_json_fn):
     from github import (
         spawn_pty, resolve_agent, build_agent_cmd, agent_short,
-        USER_SHELL, REPO_ROOT, prepare_merge, github_repo_slug,
+        REPO_ROOT, prepare_merge, github_repo_slug,
         gh_error,
     )
+    from backend.pty_client import USER_SHELL
     import shlex
     try:
         pr = int(payload.get("pr"))
@@ -841,8 +866,9 @@ def _handle_merge_pr(handler, payload, rows, cols, send_json_fn):
 def _handle_ci_fix(handler, payload, rows, cols, send_json_fn):
     from github import (
         spawn_pty, resolve_agent, build_agent_cmd, agent_short,
-        USER_SHELL, REPO_ROOT, prepare_ci_fix,
+        REPO_ROOT, prepare_ci_fix,
     )
+    from backend.pty_client import USER_SHELL
     import shlex
     try:
         pr = int(payload.get("pr"))
@@ -909,8 +935,9 @@ def _handle_ci_fix(handler, payload, rows, cols, send_json_fn):
 def _handle_propose_issue(handler, payload, rows, cols, send_json_fn):
     from github import (
         spawn_pty, resolve_agent, build_agent_cmd, agent_short,
-        USER_SHELL, REPO_ROOT, STATE_DIR, prepare_proposal,
+        REPO_ROOT, STATE_DIR, prepare_proposal,
     )
+    from backend.pty_client import USER_SHELL
     import shlex
     slug_hint = (payload.get("slug") or "").strip()
     prep = prepare_proposal(slug_hint)
@@ -986,10 +1013,11 @@ def _handle_propose_issue(handler, payload, rows, cols, send_json_fn):
 
 def _handle_issue_shell(handler, payload, rows, cols, send_json_fn):
     from github import (
-        spawn_pty, resolve_agent, build_agent_cmd, agent_short,
-        USER_SHELL, REPO_ROOT, STATE_DIR, prepare_issue_worktree,
+        resolve_agent, build_agent_cmd, agent_short,
+        REPO_ROOT, STATE_DIR, prepare_issue_worktree,
         live_issue_pty, gh_error,
     )
+    from backend.pty_client import USER_SHELL, spawn_pty
     import shlex
     from pathlib import Path
     try:
@@ -1091,9 +1119,10 @@ def _handle_issue_shell(handler, payload, rows, cols, send_json_fn):
 def _handle_issue_review(handler, payload, rows, cols, send_json_fn):
     from github import (
         spawn_pty, resolve_agent, build_agent_cmd, agent_short,
-        USER_SHELL, REPO_ROOT, STATE_DIR, prepare_issue_review,
+        REPO_ROOT, STATE_DIR, prepare_issue_review,
         gh_error, extract_issue_review_comment,
     )
+    from backend.pty_client import USER_SHELL
     import shlex
     try:
         issue = int(payload.get("issue"))
@@ -1173,7 +1202,7 @@ def _handle_issue_review(handler, payload, rows, cols, send_json_fn):
 
 
 def _handle_agent_grid_status(handler, send_json_fn):
-    from github import list_ptys, reap_dead_ptys
+    from backend.pty_client import list_ptys, reap_dead_ptys
     reap_dead_ptys()
     grid_sessions = [s for s in list_ptys() if s.get("kind") == "agent-grid-cell"]
     return send_json_fn(handler, {
@@ -1185,9 +1214,10 @@ def _handle_agent_grid_status(handler, send_json_fn):
 
 
 def _handle_agent_grid_launch(handler, payload, send_json_fn):
+    from backend.pty_client import USER_SHELL, spawn_pty
     from github import (
-        prepare_issue_worktree, spawn_pty, resolve_agent, build_agent_cmd,
-        agent_short, USER_SHELL, REPO_ROOT,
+        prepare_issue_worktree, resolve_agent, build_agent_cmd,
+        agent_short, REPO_ROOT,
     )
     import shlex
     try:
@@ -1287,7 +1317,7 @@ def _handle_agent_grid_launch(handler, payload, send_json_fn):
 
 
 def _handle_agent_grid_close(handler, payload, send_json_fn):
-    from github import list_ptys, kill_pty, delete_pty
+    from backend.pty_client import list_ptys, kill_pty, delete_pty
     grid_sids = [s["sid"] for s in list_ptys() if s.get("kind") == "agent-grid-cell"]
     for sid in grid_sids:
         kill_pty(sid)

@@ -1,9 +1,6 @@
-"""PTY daemon — a standalone Unix-socket server that owns all PTY sessions.
+"""PTY daemon — a detached Unix-socket server that owns all PTY sessions.
 
-Survives server.py restarts (SIGHUP graceful reload). The daemon runs as a
-child of the server process; when the server dies uncleanly the daemon is
-reaped automatically.
-
+The dashboard can restart independently and reconnect to the existing daemon.
 Protocol: JSON messages over a Unix domain socket.
   Request:  {"cmd": "...", "sid"?: "...", ...}
   Response: {"ok": true, "data": ...}  or  {"ok": false, "error": "..."}
@@ -16,13 +13,11 @@ import signal
 import sys
 from pathlib import Path
 
-# Add parent to path so we can import pty_runtime
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pty_runtime
 
-SOCK_PATH = Path(".gitswarm/pty_daemon.sock")
-_PID_FILE = Path(".gitswarm/pty_daemon.pid")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SOCK_PATH = REPO_ROOT / ".gitswarm/pty_daemon.sock"
+_PID_FILE = REPO_ROOT / ".gitswarm/pty_daemon.pid"
 SHUTDOWN = False
 
 

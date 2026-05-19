@@ -94,6 +94,13 @@ export function fetchPrDiff(number: number) {
   return requestJson<{ number: number; diff: string }>(`/api/pr/diff?num=${number}`);
 }
 
+export interface CiCheck { name: string; status: string }
+export interface CiStatusResult { number: number; checks: CiCheck[] }
+
+export function fetchPrCiStatus(number: number) {
+  return requestJson<CiStatusResult>(`/api/pr/ci-status?num=${number}`);
+}
+
 export function fetchFile(name: string, offset = 0) {
   return requestText(`/api/file?name=${encodeURIComponent(name)}&offset=${offset}`);
 }

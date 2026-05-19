@@ -2,6 +2,27 @@ import type { GitHubComment, GitHubReview, GitHubReviewComment, PullRequest } fr
 import { renderMarkdown } from '../markdown';
 import { Button } from '@/components/ui/button';
 import { PaneHeader, PaneShell } from './_shared';
+import { usePrCiStatus } from '../hooks/usePrCiStatus';
+
+function CiDot({ status }: { status: string }) {
+  const colors = {
+    pass: 'bg-success',
+    fail: 'bg-destructive',
+    pending: 'bg-warning',
+    unknown: 'bg-muted',
+  };
+  const cls = colors[status as keyof typeof colors] ?? colors.unknown;
+  return <span className={`inline-block h-2 w-2 rounded-full ${cls} shrink-0`} />;
+}
+
+function CiStatusBadge({ name, status }: { name: string; status: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/60 px-2 py-0.5 text-[10px] font-medium text-foreground">
+      <CiDot status={status} />
+      <span className="truncate max-w-[120px]">{name}</span>
+    </span>
+  );
+}
 
 interface PrPaneProps {
   pr: PullRequest;
@@ -66,7 +87,11 @@ function ReviewCommentBlock({ comment }: { comment: GitHubReviewComment }) {
 }
 
 export function PrPane({ pr, diff, onReview, onMerge, onFixCi }: PrPaneProps) {
-  const chips = [...(pr.labels || []), ...(pr.ci ? [pr.ci] : [])];
+  const chips = [...(pr.labels || [])];
+  const ciChecks = usePrCiStatus(pr.number);
+  const ciChips = ciChecks.length > 0 ? ciChecks.map((c) => (
+    <CiStatusBadge key={c.name} name={c.name} status={c.status} />
+  )) : null;
   const comments = pr.comments || [];
   const reviews = pr.reviews || [];
   const reviewComments = pr.review_comments || [];
@@ -84,6 +109,7 @@ export function PrPane({ pr, diff, onReview, onMerge, onFixCi }: PrPaneProps) {
           `${reviewComments.length} review comments`,
         ].filter(Boolean).join(' · ')}
         chips={chips}
+        ciChips={ciChips}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={onReview}>Review</Button>
