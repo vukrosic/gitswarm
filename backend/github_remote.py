@@ -808,11 +808,6 @@ def invalidate_caches():
         entry["ts"] = 0
     for entry in _PR_CI_CACHE.values():
         entry["ts"] = 0
-    # Kick off immediate background refreshes so the new state propagates
-    # within ~1-2s rather than waiting for the next dashboard poll.
-    _trigger_bg_refresh("issues", _fetch_issues_remote)
-    _trigger_bg_refresh("prs", _fetch_prs_remote)
-    _trigger_bg_refresh("milestones", _fetch_milestones_remote)
 
 
 def _normalize_notification(raw):

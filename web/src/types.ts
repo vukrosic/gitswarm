@@ -130,7 +130,7 @@ export interface FileEntry {
 
 export interface GridSession {
   sid: string;
-  issue: number;
+  issue?: number | null;
   label: string;
   alive: boolean;
   cwd: string;

@@ -108,10 +108,7 @@ async def handle_client(reader, writer):
         elif cmd == "shutdown":
             global SHUTDOWN
             SHUTDOWN = True
-            # Kill all PTYs then exit
-            for sess in pty_runtime.list_ptys():
-                pty_runtime.kill_pty(sess["sid"])
-                pty_runtime.delete_pty(sess["sid"])
+            # Sessions live in tmux and survive — do NOT kill them on daemon shutdown.
             out = {"ok": True, "data": "daemon shutting down"}
 
         else:
@@ -134,6 +131,9 @@ async def main():
         SOCK_PATH.unlink()
     SOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     _PID_FILE.write_text(str(os.getpid()))
+
+    # Adopt any tmux-backed sessions that survived a previous daemon.
+    pty_runtime.init(REPO_ROOT, os.environ.get("SHELL", "/bin/bash"))
 
     # Signal handlers for graceful shutdown
     def handle_sigterm():

@@ -1,49 +1,186 @@
-"""PTY session runtime for the dashboard."""
-import fcntl
+"""PTY session runtime — tmux-backed so sessions survive daemon restarts.
+
+Each logical session maps to a tmux session named ``gs-<sid>`` running on a
+dedicated tmux socket (``-L gitswarm``). The tmux server owns the actual PTY,
+so the gitswarm daemon — and the web server — can be killed and restarted
+without losing any running command. On daemon startup we discover existing
+``gs-*`` tmux sessions and re-attach to them.
+
+Per-session state on disk:
+    <REPO_ROOT>/.gitswarm/sessions/<sid>/
+        meta.json   — label, cwd, argv, started, kind/issue/pr
+        out.log     — raw bytes captured via ``tmux pipe-pane``
+        start.sh    — wrapper that exports env, cds, and execs the command
+"""
+import json
 import os
-import pty
 import re
 import secrets
-import select
 import shlex
-import signal
-import struct
-import termios
+import shutil
+import subprocess
 import threading
 import time
 from pathlib import Path
 
 
-REPO_ROOT = None
+REPO_ROOT = Path(__file__).resolve().parent.parent
 USER_SHELL = os.environ.get("SHELL", "/bin/bash")
+
+
+def _resolve_tmux():
+    override = os.environ.get("GITSWARM_TMUX_BIN")
+    if override and Path(override).is_file() and os.access(override, os.X_OK):
+        return override
+    for candidate in ("/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"):
+        if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return shutil.which("tmux") or "tmux"
+
+
+TMUX_BIN = _resolve_tmux()
+TMUX_SOCKET = "gitswarm"
+SESS_PREFIX = "gs-"
+SESS_DIR = REPO_ROOT / ".gitswarm" / "sessions"
 
 _PTY_SESSIONS = {}
 _PTY_LOCK = threading.Lock()
 _PTY_BUF_CAP = 4 * 1024 * 1024
+_INIT_LOCK = threading.Lock()
+_DISCOVERED = False
 
 
-def _close_session_fd(sess):
-    fd = sess.get("fd")
-    if fd is None:
+def _tmux(*args, timeout=10):
+    """Run a tmux command on our dedicated socket. Returns CompletedProcess."""
+    cmd = [TMUX_BIN, "-L", TMUX_SOCKET, *args]
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "tmux not found in PATH (install with: brew install tmux)"
+        ) from e
+
+
+def _tmux_has_session(target):
+    return _tmux("has-session", "-t", target).returncode == 0
+
+
+def _pane_dead(target):
+    res = _tmux("display-message", "-t", target, "-p", "#{pane_dead}")
+    return res.returncode == 0 and res.stdout.strip() == "1"
+
+
+def init(repo_root: Path = None, user_shell: str = None):
+    """Set REPO_ROOT/USER_SHELL and adopt any pre-existing tmux sessions."""
+    global REPO_ROOT, USER_SHELL, SESS_DIR, _DISCOVERED
+    with _INIT_LOCK:
+        if repo_root is not None:
+            REPO_ROOT = Path(repo_root)
+            SESS_DIR = REPO_ROOT / ".gitswarm" / "sessions"
+        if user_shell is not None:
+            USER_SHELL = user_shell
+        SESS_DIR.mkdir(parents=True, exist_ok=True)
+        _discover_existing()
+        _DISCOVERED = True
+
+
+def _discover_existing():
+    """Find ``gs-*`` tmux sessions left over from a prior daemon and adopt them."""
+    try:
+        res = _tmux(
+            "list-sessions",
+            "-F",
+            "#{session_name}|#{window_width}|#{window_height}",
+        )
+    except RuntimeError:
         return
-    sess["fd"] = None
+    if res.returncode != 0:
+        return
+    for line in res.stdout.strip().splitlines():
+        try:
+            name, cols_s, rows_s = line.split("|")
+        except ValueError:
+            continue
+        if not name.startswith(SESS_PREFIX):
+            continue
+        sid = name[len(SESS_PREFIX):]
+        if sid in _PTY_SESSIONS:
+            continue
+        meta = {}
+        meta_path = SESS_DIR / sid / "meta.json"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                meta = {}
+        try:
+            cols, rows = int(cols_s), int(rows_s)
+        except ValueError:
+            cols, rows = 120, 30
+        _adopt(sid, meta, cols, rows)
+
+
+def _adopt(sid, meta, cols, rows):
+    """Build an in-memory record for a tmux session that already exists."""
+    with _PTY_LOCK:
+        if sid in _PTY_SESSIONS:
+            return _PTY_SESSIONS[sid]
+    sess_dir = SESS_DIR / sid
+    sess_dir.mkdir(parents=True, exist_ok=True)
+    out_log = sess_dir / "out.log"
+    out_log.touch(exist_ok=True)
+
+    sess = {
+        "sid": sid,
+        "label": meta.get("label") or f"{SESS_PREFIX}{sid}",
+        "cwd": meta.get("cwd", ""),
+        "argv": list(meta.get("argv") or []),
+        "started": meta.get("started", time.time()),
+        "last_output": time.time(),
+        "last_input": time.time(),
+        "rows": rows,
+        "cols": cols,
+        "buf": bytearray(),
+        "drop": 0,
+        "cond": threading.Condition(),
+        "alive": True,
+        "exit_status": None,
+        "meta": dict(meta.get("meta_extra") or {}),
+        "out_log": str(out_log),
+        "tail_pos": 0,
+        "fd": None,
+        "pid": None,
+    }
     try:
-        os.close(fd)
+        size = out_log.stat().st_size
+        with open(out_log, "rb") as f:
+            if size > _PTY_BUF_CAP:
+                f.seek(size - _PTY_BUF_CAP)
+                sess["drop"] = size - _PTY_BUF_CAP
+            sess["buf"].extend(f.read())
+        sess["tail_pos"] = size
     except OSError:
         pass
 
+    with _PTY_LOCK:
+        _PTY_SESSIONS[sid] = sess
 
-def init(repo_root: Path, user_shell: str):
-    global REPO_ROOT, USER_SHELL
-    REPO_ROOT = repo_root
-    USER_SHELL = user_shell
+    _ensure_pipe(sid)
+    threading.Thread(target=_pty_tailer, args=(sid,), daemon=True).start()
+    return sess
 
 
-def _set_winsize(fd, rows, cols):
-    try:
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-    except OSError:
-        pass
+def _ensure_pipe(sid):
+    """Make sure pipe-pane is writing this session's output to its out.log."""
+    sess = _PTY_SESSIONS.get(sid)
+    if not sess:
+        return
+    target = f"{SESS_PREFIX}{sid}"
+    res = _tmux("display-message", "-t", target, "-p", "#{pane_pipe}")
+    if res.returncode == 0 and res.stdout.strip() == "1":
+        return
+    cmd = f"cat >> {shlex.quote(sess['out_log'])}"
+    _tmux("pipe-pane", "-t", target, cmd)
 
 
 def _clean_child_env():
@@ -92,74 +229,101 @@ def _clean_child_env():
 
 
 def spawn_pty(argv, cwd=None, env_extra=None, label="", rows=30, cols=120, meta=None):
-    """Fork a child under a PTY and keep an in-memory output ring buffer."""
+    """Create a tmux session that owns the PTY for ``argv``."""
+    if not _DISCOVERED:
+        init()
     if isinstance(argv, str):
         argv = shlex.split(argv)
+    argv = list(argv)
+
     sid = secrets.token_hex(6)
-    pid, fd = pty.fork()
-    if pid == 0:
-        try:
-            if cwd:
-                os.chdir(cwd)
-            env = _clean_child_env()
-            env["TERM"] = "xterm-256color"
-            env["COLORTERM"] = "truecolor"
-            if env_extra:
-                env.update(env_extra)
-            os.environ.clear()
-            for k, v in env.items():
-                os.environ[k] = str(v)
-            os.execvp(argv[0], argv)
-        except Exception as e:
-            os.write(2, f"\r\nexec failed: {e}\r\n".encode())
-            os._exit(127)
-    _set_winsize(fd, rows, cols)
-    sess = {
-        "sid": sid,
-        "fd": fd,
-        "pid": pid,
-        "argv": argv,
-        "cwd": cwd or os.getcwd(),
+    target = f"{SESS_PREFIX}{sid}"
+    sess_dir = SESS_DIR / sid
+    sess_dir.mkdir(parents=True, exist_ok=True)
+
+    env = _clean_child_env()
+    env["TERM"] = "xterm-256color"
+    env["COLORTERM"] = "truecolor"
+    if env_extra:
+        env.update(env_extra)
+
+    cwd_resolved = cwd or os.getcwd()
+    start_sh = sess_dir / "start.sh"
+    lines = ["#!/bin/bash"]
+    for k, v in env.items():
+        sv = str(v)
+        if "\n" in sv or "\r" in sv or "\x00" in sv:
+            continue
+        lines.append(f"export {k}={shlex.quote(sv)}")
+    lines.append(f"cd {shlex.quote(str(cwd_resolved))} 2>/dev/null || true")
+    lines.append(f"exec {shlex.join(argv)}")
+    start_sh.write_text("\n".join(lines) + "\n")
+    os.chmod(start_sh, 0o755)
+
+    meta_dict = {
         "label": label or " ".join(argv),
+        "cwd": str(cwd_resolved),
+        "argv": argv,
         "started": time.time(),
-        "last_output": time.time(),
-        "last_input": time.time(),
         "rows": rows,
         "cols": cols,
-        "buf": bytearray(),
-        "drop": 0,
-        "cond": threading.Condition(),
-        "alive": True,
-        "exit_status": None,
-        "meta": dict(meta or {}),
+        "meta_extra": dict(meta or {}),
     }
-    with _PTY_LOCK:
-        _PTY_SESSIONS[sid] = sess
-    threading.Thread(target=_pty_reader, args=(sid,), daemon=True).start()
-    threading.Thread(target=_pty_waiter, args=(sid,), daemon=True).start()
-    return sess
+    (sess_dir / "meta.json").write_text(json.dumps(meta_dict))
+
+    res = _tmux(
+        "new-session", "-d",
+        "-s", target,
+        "-x", str(cols),
+        "-y", str(rows),
+        str(start_sh),
+    )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"tmux new-session failed: {res.stderr.strip() or res.stdout.strip()}"
+        )
+    # Keep the pane around after the process exits so we can show its tail.
+    _tmux("set-option", "-t", target, "remain-on-exit", "on")
+
+    return _adopt(sid, meta_dict, cols, rows)
 
 
-def _pty_reader(sid):
+_WAIT_RE = re.compile(
+    r"[>?]$|:$|\btype\b|\bready\b|\bwaiting\b|\bpress\b|\binput\b",
+    re.IGNORECASE,
+)
+
+
+def _update_waiting(sess, chunk):
+    try:
+        text = chunk.decode("utf-8", errors="replace")
+    except Exception:
+        return
+    lines = text.split("\n")
+    if lines:
+        last = lines[-1].rstrip()
+        sess["waiting_for_input"] = bool(last and _WAIT_RE.search(last))
+
+
+def _pty_tailer(sid):
     sess = _PTY_SESSIONS.get(sid)
     if not sess:
         return
-    fd = sess["fd"]
-    if fd is None:
+    out_log = Path(sess["out_log"])
+    target = f"{SESS_PREFIX}{sid}"
+    try:
+        f = open(out_log, "rb")
+        f.seek(sess["tail_pos"])
+    except OSError:
+        sess["alive"] = False
         return
+
+    idle_polls = 0
     try:
         while True:
-            try:
-                r, _, _ = select.select([fd], [], [], 1.0)
-            except (ValueError, OSError):
-                break
-            if fd in r:
-                try:
-                    chunk = os.read(fd, 65536)
-                except OSError:
-                    break
-                if not chunk:
-                    break
+            chunk = f.read(65536)
+            if chunk:
+                idle_polls = 0
                 with sess["cond"]:
                     sess["last_output"] = time.time()
                     sess["buf"].extend(chunk)
@@ -168,57 +332,64 @@ def _pty_reader(sid):
                         del sess["buf"][:excess]
                         sess["drop"] += excess
                     sess["cond"].notify_all()
-                    text = chunk.decode("utf-8", errors="replace")
-                    lines = text.split("\n")
-                    if lines:
-                        last = lines[-1].rstrip()
-                        sess["waiting_for_input"] = bool(
-                            last and re.search(
-                                r"[>?]$|:$|\btype\b|\bready\b|\bwaiting\b|\bpress\b|\binput\b",
-                                last,
-                                re.IGNORECASE,
-                            )
-                        )
-            if not sess["alive"]:
-                break
+                sess["tail_pos"] = f.tell()
+                _update_waiting(sess, chunk)
+                continue
+
+            idle_polls += 1
+            if idle_polls % 4 == 0:
+                if not _tmux_has_session(target):
+                    break
+                if _pane_dead(target):
+                    time.sleep(0.05)
+                    tail = f.read(65536)
+                    if tail:
+                        with sess["cond"]:
+                            sess["buf"].extend(tail)
+                            sess["last_output"] = time.time()
+                            sess["cond"].notify_all()
+                        sess["tail_pos"] = f.tell()
+                    break
+            time.sleep(0.05)
     finally:
+        try:
+            f.close()
+        except OSError:
+            pass
         sess["alive"] = False
         with sess["cond"]:
             sess["cond"].notify_all()
 
 
-def _pty_waiter(sid):
+def pty_write(sid, data) -> bool:
     sess = _PTY_SESSIONS.get(sid)
-    if not sess:
-        return
-    try:
-        _, status = os.waitpid(sess["pid"], 0)
-        sess["exit_status"] = status
-    except OSError:
-        pass
-    sess["alive"] = False
-    _close_session_fd(sess)
-    with sess["cond"]:
-        sess["cond"].notify_all()
-
-
-def pty_write(sid, data: bytes) -> bool:
-    sess = _PTY_SESSIONS.get(sid)
-    if not sess or not sess["alive"] or sess.get("fd") is None:
+    if not sess or not sess.get("alive"):
         return False
-    try:
-        os.write(sess["fd"], data)
-        sess["last_input"] = time.time()
+    if not isinstance(data, (bytes, bytearray, memoryview)):
+        data = str(data).encode("utf-8")
+    data = bytes(data)
+    if not data:
         return True
-    except OSError:
-        return False
+    target = f"{SESS_PREFIX}{sid}"
+    hex_str = data.hex()
+    pairs = [hex_str[i:i + 2] for i in range(0, len(hex_str), 2)]
+    CHUNK = 512
+    for i in range(0, len(pairs), CHUNK):
+        res = _tmux("send-keys", "-t", target, "-H", *pairs[i:i + CHUNK])
+        if res.returncode != 0:
+            return False
+    sess["last_input"] = time.time()
+    return True
 
 
 def pty_resize(sid, rows, cols):
     sess = _PTY_SESSIONS.get(sid)
-    if not sess or sess.get("fd") is None:
+    if not sess:
         return False
-    _set_winsize(sess["fd"], rows, cols)
+    target = f"{SESS_PREFIX}{sid}"
+    res = _tmux("resize-window", "-t", target, "-x", str(cols), "-y", str(rows))
+    if res.returncode != 0:
+        return False
     sess["rows"], sess["cols"] = rows, cols
     return True
 
@@ -228,6 +399,13 @@ def pty_rename(sid, label):
     if not sess:
         return False
     sess["label"] = label
+    meta_path = SESS_DIR / sid / "meta.json"
+    try:
+        meta = json.loads(meta_path.read_text())
+        meta["label"] = label
+        meta_path.write_text(json.dumps(meta))
+    except (OSError, json.JSONDecodeError):
+        pass
     return True
 
 
@@ -240,6 +418,8 @@ def pty_read(sid, offset, timeout=20):
         while True:
             drop = sess["drop"]
             logical_len = drop + len(sess["buf"])
+            if offset > logical_len:
+                return bytes(sess["buf"]), logical_len, sess["alive"], drop, True
             if offset < drop:
                 return bytes(sess["buf"]), logical_len, sess["alive"], drop, True
             buf_off = offset - drop
@@ -257,14 +437,11 @@ def kill_pty(sid):
     sess = _PTY_SESSIONS.get(sid)
     if not sess:
         return False
-    try:
-        os.killpg(os.getpgid(sess["pid"]), signal.SIGHUP)
-    except Exception:
-        try:
-            os.kill(sess["pid"], signal.SIGHUP)
-        except OSError:
-            pass
+    target = f"{SESS_PREFIX}{sid}"
+    _tmux("kill-session", "-t", target)
     sess["alive"] = False
+    with sess["cond"]:
+        sess["cond"].notify_all()
     return True
 
 
@@ -274,10 +451,8 @@ def delete_pty(sid):
         return False
     kill_pty(sid)
     with _PTY_LOCK:
-        sess = _PTY_SESSIONS.pop(sid, None)
-    if not sess:
-        return False
-    _close_session_fd(sess)
+        _PTY_SESSIONS.pop(sid, None)
+    shutil.rmtree(SESS_DIR / sid, ignore_errors=True)
     return True
 
 
@@ -321,12 +496,12 @@ def reap_dead_ptys(max_age_dead=600):
     now = time.time()
     with _PTY_LOCK:
         dead = [
-            sid
-            for sid, s in _PTY_SESSIONS.items()
+            sid for sid, s in _PTY_SESSIONS.items()
             if not s["alive"] and (now - s["started"]) > max_age_dead
         ]
         for sid in dead:
             _PTY_SESSIONS.pop(sid, None)
+            shutil.rmtree(SESS_DIR / sid, ignore_errors=True)
 
 
 def pty_in_use(worktree_path: Path) -> bool:

@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 
 export interface GridSession {
   sid: string;
-  issue: number;
+  issue?: number | null;
   label: string;
   alive: boolean;
   cwd: string;
@@ -80,16 +80,13 @@ export function AgentGridPane({
   const activeCells = gridConfig.rows * gridConfig.cols;
 
   async function handleLaunch() {
-    if (!selectedAgent || activeCells === 0) return;
+    if (activeCells === 0) return;
     setLaunching(true);
     try {
-      // Build list of issue numbers from the first `activeCells` grid sessions
-      // If not enough sessions, prompt user
-      const issueNumbers = gridSessions.slice(0, activeCells).map((s) => s.issue);
-      if (issueNumbers.length < activeCells) {
-        alert(`Need ${activeCells} issues configured. Only ${issueNumbers.length} grid sessions available.`);
-        return;
-      }
+      const issueNumbers = gridSessions
+        .slice(0, activeCells)
+        .map((s) => s.issue)
+        .filter((n): n is number => typeof n === 'number');
       await onLaunch(selectedAgent, issueNumbers, gridConfig.cols, gridConfig.rows);
     } finally {
       setLaunching(false);
@@ -195,7 +192,11 @@ export function AgentGridPane({
                       )}
                     />
                     <span className="text-[11px] font-semibold text-foreground">{cellLabel}</span>
-                    <span className="text-[11px] text-muted-foreground">#{session.issue}</span>
+                    {session.issue ? (
+                      <span className="text-[11px] text-muted-foreground">#{session.issue}</span>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">shell</span>
+                    )}
                   </div>
                   <button
                     type="button"

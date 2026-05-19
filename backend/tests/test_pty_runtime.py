@@ -32,8 +32,6 @@ class PtySpawnTests(unittest.TestCase):
     def test_spawn_pty_returns_session(self):
         sess = pty_runtime.spawn_pty(["/bin/sh", "-c", "sleep 10"], label="test-spawn")
         self.assertIn("sid", sess)
-        self.assertIn("fd", sess)
-        self.assertIn("pid", sess)
         self.assertEqual(sess["label"], "test-spawn")
         self.assertTrue(sess["alive"])
         pty_runtime.delete_pty(sess["sid"])
@@ -75,12 +73,26 @@ class PtyWriteReadTests(unittest.TestCase):
 
     def test_write_then_read(self):
         sess = pty_runtime.spawn_pty(["/bin/sh", "-c", "read -r LINE; echo got:$LINE; sleep 1"], label="write-test")
-        time.sleep(0.05)
+        time.sleep(0.1)
         ok = pty_runtime.pty_write(sess["sid"], b"hello\n")
         self.assertTrue(ok)
-        # read with a short timeout to collect "got:hello"
-        data, logical_len, alive, drop, reset = pty_runtime.pty_read(sess["sid"], 0, timeout=3)
-        self.assertIn(b"got:hello", data)
+        # The runtime may deliver the input echo as a separate chunk from the
+        # command output, so poll until "got:hello" appears.
+        collected = bytearray()
+        offset = 0
+        deadline = time.time() + 5
+        while time.time() < deadline and b"got:hello" not in collected:
+            res = pty_runtime.pty_read(sess["sid"], offset, timeout=1)
+            if res is None:
+                break
+            data, logical_len, alive, drop, reset = res
+            if reset:
+                collected = bytearray(data)
+                offset = logical_len
+            else:
+                collected.extend(data)
+                offset += len(data)
+        self.assertIn(b"got:hello", bytes(collected))
         pty_runtime.delete_pty(sess["sid"])
 
     def test_write_to_dead_session_returns_false(self):
@@ -187,7 +199,13 @@ class PtyReapTests(unittest.TestCase):
 
     def test_reap_removes_old_dead_sessions(self):
         sess = pty_runtime.spawn_pty(["/bin/sh", "-c", "exit 0"], label="short-lived")
-        time.sleep(0.2)
+        # Wait for the tailer to notice the pane is dead and flip alive=False.
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            alive = [s for s in pty_runtime.list_ptys() if s["sid"] == sess["sid"]]
+            if alive and not alive[0]["alive"]:
+                break
+            time.sleep(0.1)
         before = len(pty_runtime.list_ptys())
         self.assertEqual(before, 1)
         pty_runtime.reap_dead_ptys(max_age_dead=0)

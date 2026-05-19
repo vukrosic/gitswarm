@@ -1217,20 +1217,18 @@ def _handle_agent_grid_launch(handler, payload, send_json_fn):
     import shlex
     try:
         agent_id = payload.get("agent", "")
-        issue_numbers = payload.get("issueNumbers", [])
+        issue_numbers = payload.get("issueNumbers", []) or []
         cols = int(payload.get("cols") or 3)
         rows = int(payload.get("rows") or 2)
     except (TypeError, ValueError):
         return send_json_fn(handler, {"error": "invalid payload"}, 400)
 
-    if not isinstance(issue_numbers, list) or len(issue_numbers) == 0:
-        return send_json_fn(handler, {"error": "issueNumbers must be a non-empty list"}, 400)
+    if not isinstance(issue_numbers, list):
+        return send_json_fn(handler, {"error": "issueNumbers must be a list"}, 400)
 
-    agent = resolve_agent(agent_id)
+    agent = resolve_agent(agent_id) if agent_id else None
     total_cells = cols * rows
     issue_nums = issue_numbers[:total_cells]
-    if len(issue_nums) < total_cells:
-        return send_json_fn(handler, {"error": f"need {total_cells} issues, got {len(issue_nums)}"}, 400)
 
     # Build cell labels: A1, B1, C1, A2, B2, C2 for 3x2
     cell_labels = []
@@ -1240,64 +1238,85 @@ def _handle_agent_grid_launch(handler, payload, send_json_fn):
 
     created = []
     errors = []
-    for idx, issue_num in enumerate(issue_nums):
+    for idx in range(total_cells):
         cell = cell_labels[idx]
-        label = f"grid-{cell} · #{issue_num}"
-        prep = prepare_issue_worktree(issue_num)
-        if prep.get("error"):
-            errors.append({"cell": cell, "issue": issue_num, "error": prep["error"]})
-            continue
-        wt = prep.get("worktree", "")
-        prompt_file = prep.get("prompt_file") or ""
+        issue_num = issue_nums[idx] if idx < len(issue_nums) else None
 
-        agent_cmd = build_agent_cmd(agent, '$(cat "$AGENT_PROMPT_FILE")')
-        env_extra = {
-            "AGENT_ISSUE": str(issue_num),
-            "AGENT_BRANCH": prep.get("branch", ""),
-            "AGENT_PROMPT_FILE": prompt_file,
-            "PS1": f"\\[\\e[33m\\]grid-{cell} · #{issue_num}\\[\\e[0m\\]:\\W$ ",
-        }
-        wrapper = (
-            'echo "──── starting {bin} ({yolo_short}) grid cell {cell} on issue #{issue} ────"; '
-            'echo "      agent:  {agent_label}"; '
-            'echo "      model:  {model}"; '
-            'echo "      cell:   {cell}"; '
-            'echo "      branch: $AGENT_BRANCH"; '
-            'echo "      prompt: $AGENT_PROMPT_FILE"; '
-            'echo "────"; '
-            '{agent_cmd}; '
-            'ec=$?; '
-            'echo; '
-            'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
-            'exec {shell} -i'
-        ).format(
-            bin=shlex.quote(agent["bin"]),
-            yolo_short=agent_short(agent),
-            cell=cell,
-            issue=issue_num,
-            agent_label=agent["label"],
-            model=agent.get("model") or "(agent default)",
-            agent_cmd=agent_cmd,
-            shell=shlex.quote(USER_SHELL),
-        )
-        argv = ["bash", "-c", wrapper]
-        sess = spawn_pty(
-            argv,
-            cwd=str(REPO_ROOT / wt) if wt else str(REPO_ROOT),
-            env_extra=env_extra,
-            label=label,
-            rows=30,
-            cols=120,
-            meta={
-                "kind": "agent-grid-cell",
-                "cell": cell,
-                "issue": issue_num,
-                "branch": prep.get("branch", ""),
-                "worktree": wt,
-                "prompt_file": prompt_file,
-            },
-        )
-        created.append({"cell": cell, "sid": sess["sid"], "issue": issue_num})
+        if issue_num and agent:
+            label = f"grid-{cell} · #{issue_num}"
+            prep = prepare_issue_worktree(issue_num)
+            if prep.get("error"):
+                errors.append({"cell": cell, "issue": issue_num, "error": prep["error"]})
+                continue
+            wt = prep.get("worktree", "")
+            prompt_file = prep.get("prompt_file") or ""
+
+            agent_cmd = build_agent_cmd(agent, '$(cat "$AGENT_PROMPT_FILE")')
+            env_extra = {
+                "AGENT_ISSUE": str(issue_num),
+                "AGENT_BRANCH": prep.get("branch", ""),
+                "AGENT_PROMPT_FILE": prompt_file,
+                "PS1": f"\\[\\e[33m\\]grid-{cell} · #{issue_num}\\[\\e[0m\\]:\\W$ ",
+            }
+            wrapper = (
+                'echo "──── starting {bin} ({yolo_short}) grid cell {cell} on issue #{issue} ────"; '
+                'echo "      agent:  {agent_label}"; '
+                'echo "      model:  {model}"; '
+                'echo "      cell:   {cell}"; '
+                'echo "      branch: $AGENT_BRANCH"; '
+                'echo "      prompt: $AGENT_PROMPT_FILE"; '
+                'echo "────"; '
+                '{agent_cmd}; '
+                'ec=$?; '
+                'echo; '
+                'echo "──── {bin} exited (code $ec) — dropping to shell ────"; '
+                'exec {shell} -i'
+            ).format(
+                bin=shlex.quote(agent["bin"]),
+                yolo_short=agent_short(agent),
+                cell=cell,
+                issue=issue_num,
+                agent_label=agent["label"],
+                model=agent.get("model") or "(agent default)",
+                agent_cmd=agent_cmd,
+                shell=shlex.quote(USER_SHELL),
+            )
+            argv = ["bash", "-c", wrapper]
+            sess = spawn_pty(
+                argv,
+                cwd=str(REPO_ROOT / wt) if wt else str(REPO_ROOT),
+                env_extra=env_extra,
+                label=label,
+                rows=30,
+                cols=120,
+                meta={
+                    "kind": "agent-grid-cell",
+                    "cell": cell,
+                    "issue": issue_num,
+                    "branch": prep.get("branch", ""),
+                    "worktree": wt,
+                    "prompt_file": prompt_file,
+                },
+            )
+            created.append({"cell": cell, "sid": sess["sid"], "issue": issue_num})
+        else:
+            label = f"grid-{cell}"
+            env_extra = {
+                "PS1": f"\\[\\e[33m\\]grid-{cell}\\[\\e[0m\\]:\\W$ ",
+            }
+            sess = spawn_pty(
+                [USER_SHELL, "-i"],
+                cwd=str(REPO_ROOT),
+                env_extra=env_extra,
+                label=label,
+                rows=30,
+                cols=120,
+                meta={
+                    "kind": "agent-grid-cell",
+                    "cell": cell,
+                },
+            )
+            created.append({"cell": cell, "sid": sess["sid"], "issue": None})
 
     _AGENT_GRID["active"] = True
     _AGENT_GRID["agent"] = agent_id
