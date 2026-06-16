@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from backend.static import init as static_init, maybe_serve_frontend
 from backend.reload import init as reload_init
 from backend.http import send_json
-from github import STATE_DIR, WORKTREES_DIR
+import github
 
 
 WEB_DIR = _HERE / "web"
@@ -79,9 +79,15 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: shutdown_handler())
     signal.signal(signal.SIGHUP, lambda *_: _graceful_reload())
 
+    # Register the host checkout and activate the saved project (if any). This
+    # sets the live REPO_ROOT/STATE_DIR/WORKTREES_DIR before the first request.
+    projects = github.bootstrap_projects()
+    active = projects.get("active") or "(host)"
+
     print(f"gitswarm dashboard: http://localhost:{port}", flush=True)
-    print(f"  state dir:   {STATE_DIR}", flush=True)
-    print(f"  worktrees:   {WORKTREES_DIR}", flush=True)
+    print(f"  active proj: {active}", flush=True)
+    print(f"  state dir:   {github.STATE_DIR}", flush=True)
+    print(f"  worktrees:   {github.WORKTREES_DIR}", flush=True)
     http.server.ThreadingHTTPServer(bind, Handler).serve_forever()
 
 

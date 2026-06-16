@@ -25,6 +25,9 @@ def dispatch_get(handler, u, qs, send_json_fn):
         return _handle_pr_ci_status(handler, qs, send_json_fn)
     if path == "/api/agents":
         return _handle_agents(handler, send_json_fn)
+    if path == "/api/projects":
+        from github import list_projects
+        return send_json_fn(handler, list_projects())
     if path == "/api/files":
         from github import list_state_files
         return send_json_fn(handler, {"files": list_state_files()})
@@ -230,10 +233,38 @@ def dispatch_post(handler, u, payload, send_json_fn):
         return _handle_issue(handler, path, payload, send_json_fn)
     if path == "/api/milestone/close":
         return _handle_milestone_close(handler, payload, send_json_fn)
+    if path == "/api/projects/add":
+        return _handle_project_add(handler, payload, send_json_fn)
+    if path == "/api/projects/activate":
+        return _handle_project_activate(handler, payload, send_json_fn)
     # Fall-through to 404
     handler.send_response(404)
     handler.end_headers()
     return None
+
+
+def _handle_project_add(handler, payload, send_json_fn):
+    from github import add_project, list_projects
+    repo_root = (payload or {}).get("repo_root") or ""
+    if not repo_root:
+        return send_json_fn(handler, {"error": "repo_root is required"}, 400)
+    label = (payload or {}).get("label") or ""
+    try:
+        project = add_project(repo_root, label=label, activate=True)
+    except Exception as e:
+        return send_json_fn(handler, {"error": str(e)}, 400)
+    return send_json_fn(handler, {"project": project, "projects": list_projects()})
+
+
+def _handle_project_activate(handler, payload, send_json_fn):
+    from github import activate_project, list_projects
+    project_id = (payload or {}).get("project_id") or ""
+    if not project_id:
+        return send_json_fn(handler, {"error": "project_id is required"}, 400)
+    project = activate_project(project_id)
+    if not project:
+        return send_json_fn(handler, {"error": "unknown project"}, 404)
+    return send_json_fn(handler, {"project": project, "projects": list_projects()})
 
 
 def _handle_launch(handler, payload, send_json_fn):

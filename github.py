@@ -9,7 +9,11 @@ import time
 from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
-REPO_ROOT = Path.cwd().resolve()
+# CONTROL_ROOT is the directory gitswarm was launched from — it holds the
+# project registry (.gitswarm/projects.json). REPO_ROOT is the *active*
+# project's checkout and can be swapped at runtime via set_repo_context().
+CONTROL_ROOT = Path.cwd().resolve()
+REPO_ROOT = CONTROL_ROOT
 REPO_NAME = REPO_ROOT.name
 STATE_DIR = REPO_ROOT / ".gitswarm" / "state"
 WORKTREES_DIR = REPO_ROOT / ".agent-worktrees"
@@ -94,6 +98,52 @@ from backend.github_remote import (
 )
 
 _init_github_remote(REPO_ROOT, STATE_DIR)
+
+from backend.projects import (
+    bootstrap_project as _bootstrap_project_registry,
+    get_active_project as _get_active_project_registry,
+    list_projects as _list_projects_registry,
+    upsert_project as _upsert_project_registry,
+    activate_project as _activate_project_registry,
+)
+
+
+def set_repo_context(repo_root):
+    """Point all repo-scoped helpers at a different project checkout."""
+    global REPO_ROOT, REPO_NAME, STATE_DIR, WORKTREES_DIR
+    REPO_ROOT = Path(repo_root).expanduser().resolve()
+    REPO_NAME = REPO_ROOT.name
+    STATE_DIR = REPO_ROOT / ".gitswarm" / "state"
+    WORKTREES_DIR = REPO_ROOT / ".agent-worktrees"
+    # github_remote caches the slug + data per process; re-init resets them so
+    # the next fetch resolves against the newly active repo.
+    _init_github_remote(REPO_ROOT, STATE_DIR)
+
+
+def bootstrap_projects():
+    """Ensure the host checkout is registered, then activate the saved project."""
+    _bootstrap_project_registry(CONTROL_ROOT)
+    active = _get_active_project_registry()
+    set_repo_context(active["repo_root"] if active and active.get("repo_root") else CONTROL_ROOT)
+    return _list_projects_registry()
+
+
+def list_projects():
+    return _list_projects_registry()
+
+
+def add_project(repo_root, label=None, activate=True):
+    project = _upsert_project_registry(repo_root, label=label, activate=activate)
+    if activate and project.get("repo_root"):
+        set_repo_context(project["repo_root"])
+    return project
+
+
+def activate_project(project_id):
+    project = _activate_project_registry(project_id)
+    if project and project.get("repo_root"):
+        set_repo_context(project["repo_root"])
+    return project
 
 
 def resolve_agent(agent_id, override_model=None, override_bin=None, override_yolo=None):

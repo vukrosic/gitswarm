@@ -1,4 +1,6 @@
-import type { Agent, FileEntry, GridSession, Issue, Milestone, PullRequest, PtyStreamResult, PtySession, RunningWorktree, Snapshot, Worktree } from '../types';
+import type { Agent, FileEntry, GridSession, Issue, Milestone, Project, PullRequest, PtyStreamResult, PtySession, RunningWorktree, Snapshot, Worktree } from '../types';
+
+type ProjectList = { active: string; projects: Project[] };
 
 type JsonInit = RequestInit & { json?: unknown };
 
@@ -38,6 +40,24 @@ async function requestText(path: string): Promise<string> {
     }
   }
   return text;
+}
+
+export function fetchProjects() {
+  return requestJson<ProjectList>('/api/projects');
+}
+
+export function addProject(repoRoot: string, label = '') {
+  return requestJson<{ project: Project; projects: ProjectList }>('/api/projects/add', {
+    method: 'POST',
+    json: { repo_root: repoRoot, label },
+  });
+}
+
+export function activateProject(projectId: string) {
+  return requestJson<{ project: Project; projects: ProjectList }>('/api/projects/activate', {
+    method: 'POST',
+    json: { project_id: projectId },
+  });
 }
 
 export async function fetchNotifications(allRead = false, reason = 'owner') {

@@ -66,6 +66,11 @@ def init(repo_root: Path, state_dir: Path):
     global REPO_ROOT, STATE_DIR
     REPO_ROOT = repo_root
     STATE_DIR = state_dir
+    # Switching repo context: drop the cached slug and in-memory data caches so
+    # the next fetch resolves against the new checkout. Disk cache is keyed per
+    # project via STATE_DIR, so it does not bleed across projects.
+    _SLUG_CACHE.update({"ts": 0, "value": ""})
+    invalidate_caches()
 
 
 def _cache_dir():
