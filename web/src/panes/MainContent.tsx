@@ -44,6 +44,7 @@ interface MainContentProps {
   onCreateIssue: () => void;
   onClaimIssue: (issue: Issue) => void;
   onReviewIssue: (issue: Issue) => void;
+  onTriageIssue: (issue: Issue) => void;
   onSaveIssue: (issue: Issue) => void;
   onDeleteIssue: (issue: Issue) => void;
   onFocusMilestoneIssue: (issue: Issue) => void;
@@ -97,6 +98,7 @@ export function MainContent(props: MainContentProps) {
     onCreateIssue,
     onClaimIssue,
     onReviewIssue,
+    onTriageIssue,
     onSaveIssue,
     onDeleteIssue,
     onFocusMilestoneIssue,
@@ -139,6 +141,7 @@ export function MainContent(props: MainContentProps) {
           onOpenIssueCreator={onOpenIssueCreator}
           onClaim={() => onClaimIssue(selectedIssue)}
           onReview={() => onReviewIssue(selectedIssue)}
+          onTriage={() => onTriageIssue(selectedIssue)}
           onSave={() => onSaveIssue(selectedIssue)}
           onDelete={() => onDeleteIssue(selectedIssue)}
         />

@@ -14,8 +14,11 @@ import {
   updateIssue,
   issueCleanup,
   fetchNotifications,
+  fetchProjects,
+  addProject,
+  activateProject,
 } from './api';
-import type { GitHubNotification, Issue, Milestone, PullRequest, PtySession, Worktree } from './types';
+import type { GitHubNotification, Issue, Milestone, Project, PullRequest, PtySession, Worktree } from './types';
 import type { IssueFilter, LaunchResult, Pane, Selection } from './types/dashboard';
 import { AppHeader } from './components/AppHeader';
 import { DashboardSidebar } from './components/DashboardSidebar';
@@ -47,6 +50,7 @@ export default function App() {
   const [dockCollapsed, setDockCollapsed] = useState(() => localStorage.getItem('gitswarm.terminalDockCollapsed') === '1');
   const [notifications, setNotifications] = useState<GitHubNotification[]>([]);
   const [notifsLoading, setNotifsLoading] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
   const codeMtimeRef = useRef(0);
   const ptyInputQueuesRef = useRef<Record<string, Promise<void>>>({});
   const {
@@ -151,6 +155,37 @@ export default function App() {
     }
   }
 
+  const activeProject = projects.find((project) => project.active) || null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchProjects()
+      .then((res) => {
+        if (!cancelled) setProjects(res.projects || []);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleProjectChange(projectId: string) {
+    if (projectId === activeProject?.id) return;
+    await run('switch project', async () => {
+      const res = await activateProject(projectId);
+      setProjects(res.projects.projects || []);
+    });
+  }
+
+  async function handleAddProject() {
+    const repoRoot = window.prompt('Absolute path to the repo to add:')?.trim();
+    if (!repoRoot) return;
+    await run('add project', async () => {
+      const res = await addProject(repoRoot);
+      setProjects(res.projects.projects || []);
+    });
+  }
+
   function queuePtyInput(sid: string, value: string) {
     const previous = ptyInputQueuesRef.current[sid] || Promise.resolve();
     const next = previous
@@ -246,6 +281,20 @@ export default function App() {
 
   async function handleReviewIssue(issue: Issue) {
     await launchIssueReview(issue, true);
+  }
+
+  async function launchIssueTriage(issue: Issue, focus = true) {
+    const result = await run(`triage #${issue.number}`, async () => {
+      return sendPromptLaunch('triage', { issue: issue.number, agent: selectedAgent }) as Promise<LaunchResult>;
+    });
+    if (focus) {
+      focusLaunchResult(result, 'main');
+    }
+    return result;
+  }
+
+  async function handleTriageIssue(issue: Issue) {
+    await launchIssueTriage(issue, true);
   }
 
   async function handleFocusMilestoneIssue(issue: Issue) {
@@ -656,11 +705,15 @@ export default function App() {
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <AppHeader
+        projects={projects}
+        activeProject={activeProject}
         agents={agents}
         defaultAgent={defaultAgent}
         selectedAgent={selectedAgent}
         busy={busy}
         dockCollapsed={dockCollapsed}
+        onProjectChange={(id) => void handleProjectChange(id)}
+        onAddProject={() => void handleAddProject()}
         onAgentChange={setSelectedAgent}
         onNewShell={() => void handleNewShell()}
         onNewAgent={() => void handleAgentShell()}
@@ -749,6 +802,7 @@ export default function App() {
           onCreateIssue={() => void handleCreateIssue()}
           onClaimIssue={(issue) => void handleClaim(issue)}
           onReviewIssue={(issue) => void handleReviewIssue(issue)}
+          onTriageIssue={(issue) => void handleTriageIssue(issue)}
           onSaveIssue={(issue) => void handleEditIssue(issue)}
           onDeleteIssue={(issue) => void handleDeleteIssue(issue)}
           onFocusMilestoneIssue={(issue) => void handleFocusMilestoneIssue(issue)}

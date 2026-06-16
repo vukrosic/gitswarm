@@ -492,6 +492,8 @@ def _handle_pty_new(handler, payload, send_json_fn):
         return _handle_issue_shell(handler, payload, rows, cols, send_json_fn)
     if kind == "issue-review":
         return _handle_issue_review(handler, payload, rows, cols, send_json_fn)
+    if kind == "triage":
+        return _handle_triage(handler, payload, rows, cols, send_json_fn)
 
     return send_json_fn(handler, {"error": f"unknown kind: {kind}"}, 400)
 
@@ -1224,6 +1226,90 @@ def _handle_issue_review(handler, payload, rows, cols, send_json_fn):
         "model": agent.get("model"),
         "prompt_file": prompt_file,
         "review_url_file": str(review_url_file),
+    })
+
+
+def _handle_triage(handler, payload, rows, cols, send_json_fn):
+    from github import (
+        spawn_pty, resolve_agent, build_agent_cmd, agent_short,
+        REPO_ROOT, STATE_DIR, prepare_triage,
+    )
+    from backend.pty_client import USER_SHELL
+    import shlex
+    try:
+        issue = int(payload.get("issue"))
+    except (TypeError, ValueError):
+        return send_json_fn(handler, {"error": "issue must be int"}, 400)
+    prep = prepare_triage(issue)
+    if prep.get("error"):
+        return send_json_fn(handler, prep, 400)
+    prompt_file = prep["prompt_file"]
+    triage_url_file = STATE_DIR / f"triage-{issue}.url"
+    triage_url_file.unlink(missing_ok=True)
+
+    agent = resolve_agent(
+        payload.get("agent"),
+        override_model=payload.get("model"),
+        override_bin=payload.get("bin"),
+        override_yolo=payload.get("yolo_flag"),
+    )
+    agent_cmd = build_agent_cmd(agent, f"$(cat {shlex.quote(prompt_file)})")
+
+    env_extra = {
+        "ISSUE_NUMBER": str(issue),
+        "TRIAGE_URL_FILE": str(triage_url_file),
+        "PROMPT_FILE": prompt_file,
+        "PS1": "\\[\\e[33m\\]triage·issue#" + str(issue) + "\\[\\e[0m\\]:\\W$ ",
+    }
+    wrapper = (
+        'set -o pipefail; '
+        'echo "──── starting {bin} ({yolo_short}) triage of issue #{issue} ────"; '
+        'echo "      agent:  {agent_label}"; '
+        'echo "      model:  {model}"; '
+        'echo "      prompt: $PROMPT_FILE"; '
+        'echo "      report: will auto-post from terminal output"; '
+        'echo "────"; '
+        'triage_text="$({agent_cmd} 2>&1 | tee /dev/tty)"; '
+        'ec=$?; '
+        'set +o pipefail; '
+        'echo; '
+        'echo "──── {bin} exited (code $ec) ────"; '
+        'comment="$(printf %s "$triage_text" | python3 -c \'import sys; from github import extract_triage_comment; sys.stdout.write(extract_triage_comment(sys.stdin.read()))\')"; '
+        'if [ -n "$comment" ]; then '
+            'echo "  posting triage report to issue #{issue}…"; '
+            'url=$(printf %s "$comment" | gh issue comment {issue} --body-file - 2>&1); '
+            'echo "  $url"; '
+            'echo "$url" | grep -Eo \'https://github.com/[^ ]+\' | head -1 > $TRIAGE_URL_FILE; '
+            'echo "  comment url saved to $TRIAGE_URL_FILE"; '
+        'else '
+            'echo "  no triage report block found in agent output — nothing posted."; '
+        'fi; '
+        'echo; '
+        'exec {shell} -i'
+    ).format(
+        issue=issue,
+        agent_label=agent["label"],
+        model=agent.get("model") or "(agent default)",
+        bin=shlex.quote(agent["bin"]),
+        yolo_short=agent_short(agent),
+        agent_cmd=agent_cmd,
+        shell=shlex.quote(USER_SHELL),
+    )
+    argv = ["bash", "-c", wrapper]
+    sess = spawn_pty(argv, cwd=str(REPO_ROOT),
+                     env_extra=env_extra,
+                     label=f"{agent['id']} triage · issue #{issue}",
+                     rows=rows, cols=cols)
+    return send_json_fn(handler, {
+        "sid": sess["sid"],
+        "label": sess["label"],
+        "cwd": sess["cwd"],
+        "issue": issue,
+        "issue_url": prep.get("url"),
+        "agent": agent["id"],
+        "model": agent.get("model"),
+        "prompt_file": prompt_file,
+        "triage_url_file": str(triage_url_file),
     })
 
 

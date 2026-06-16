@@ -11,6 +11,7 @@ interface IssuePaneProps {
   onOpenIssueCreator: () => void;
   onClaim: () => void;
   onReview: () => void;
+  onTriage: () => void;
   onSave: () => void;
   onDelete: () => void;
 }
@@ -38,12 +39,14 @@ export function IssuePane({
   onOpenIssueCreator,
   onClaim,
   onReview,
+  onTriage,
   onSave,
   onDelete,
 }: IssuePaneProps) {
   const comments = issue.comments || [];
   const claimLoading = busy === `claim #${issue.number}`;
   const reviewLoading = busy === `review #${issue.number}`;
+  const triageLoading = busy === `triage #${issue.number}`;
   const saveLoading = busy === `update #${issue.number}`;
   const deleteLoading = busy === `delete #${issue.number}`;
   return (
@@ -75,6 +78,16 @@ export function IssuePane({
             </Button>
             <Button variant="outline" size="sm" onClick={onReview} loading={reviewLoading} disabled={!!busy}>
               Review
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onTriage}
+              loading={triageLoading}
+              disabled={!!busy}
+              title="Launch an agent to classify this issue (type, complexity, files, disposition) and post a triage report comment"
+            >
+              Triage
             </Button>
             {issue.url ? (
               <Button

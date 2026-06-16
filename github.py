@@ -526,6 +526,57 @@ def extract_issue_review_comment(text: str):
     return extract_reviewer_verdict(text)
 
 
+def prepare_triage(issue_num: int):
+    """Build a triage prompt for an issue and persist it for the agent.
+
+    Mirrors prepare_issue_review but uses the classification-focused triage
+    template. The agent reads the issue + repo, classifies it, and emits a
+    `# Triage report` block that the wrapper posts back as an issue comment.
+    """
+    if not (1 <= issue_num <= 9999):
+        return {"error": "bad issue number"}
+    try:
+        meta = fetch_issue_meta(issue_num)
+    except Exception as e:
+        return {"error": f"gh api issue #{issue_num}: {gh_error(e)}"}
+    body = meta.get("body") or ""
+    title = meta.get("title") or ""
+
+    template_path = PROMPTS_DIR / "triage.md"
+    if not template_path.exists():
+        return {"error": "prompts/triage.md missing"}
+    tpl = template_path.read_text()
+    prompt = (
+        tpl.replace("$ISSUE_NUMBER", str(issue_num))
+           .replace("$ISSUE_TITLE", title)
+           .replace("$ISSUE_BODY", body)
+           .replace("$REPO_NAME", REPO_NAME)
+    )
+    prompt_file = STATE_DIR / f"triage-prompt-{issue_num}.md"
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    prompt_file.write_text(prompt)
+    return {
+        "issue": issue_num,
+        "prompt_file": str(prompt_file),
+        "body_size": len(body),
+        "url": meta.get("url"),
+    }
+
+
+def extract_triage_comment(text: str):
+    """Pull the `# Triage report` block out of a triage PTY transcript."""
+    if not text:
+        return ""
+    start = text.find("# Triage report")
+    if start < 0:
+        return ""
+    tail = text[start:]
+    end = tail.find("\n────")
+    if end >= 0:
+        tail = tail[:end]
+    return tail.strip()
+
+
 def prepare_merge(pr_num: int):
     """Render the merger prompt for a PR. Returns the prompt file path and
     the PR's head branch name so the wrapper can checkout if needed."""

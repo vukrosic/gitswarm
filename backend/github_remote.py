@@ -66,11 +66,19 @@ def init(repo_root: Path, state_dir: Path):
     global REPO_ROOT, STATE_DIR
     REPO_ROOT = repo_root
     STATE_DIR = state_dir
-    # Switching repo context: drop the cached slug and in-memory data caches so
-    # the next fetch resolves against the new checkout. Disk cache is keyed per
-    # project via STATE_DIR, so it does not bleed across projects.
+    # Switching repo context: fully drop the cached slug and all in-memory data
+    # so the next fetch resolves against the new checkout. We clear the *values*
+    # (not just timestamps) because issue/PR numbers collide across repos — a
+    # stale-while-revalidate read would briefly show the previous project's data
+    # under the new project's name. Disk cache is keyed per project via STATE_DIR.
     _SLUG_CACHE.update({"ts": 0, "value": ""})
-    invalidate_caches()
+    for cache in (_ISSUES_CACHE, _PRS_CACHE, _MILESTONES_CACHE, _NOTIFS_CACHE):
+        cache["ts"] = 0
+        cache["data"] = None
+    _ISSUE_META_CACHE.clear()
+    _PR_META_CACHE.clear()
+    _PR_DIFF_CACHE.clear()
+    _PR_CI_CACHE.clear()
 
 
 def _cache_dir():
@@ -200,6 +208,7 @@ def run_gh(args, timeout=20, retries=2):
             result = subprocess.run(
                 ["gh", *args],
                 capture_output=True, text=True, timeout=timeout,
+                cwd=str(REPO_ROOT) if REPO_ROOT else None,
             )
         except subprocess.TimeoutExpired as e:
             last = e
@@ -633,6 +642,7 @@ def _fetch_issues_remote():
         ["gh", "issue", "list", "--state", "open",
          "--limit", "100", "--json", "number,title,body,labels,url,author,assignees,comments,createdAt,updatedAt,state,milestone"],
         capture_output=True, text=True, timeout=20, check=True,
+        cwd=str(REPO_ROOT) if REPO_ROOT else None,
     ).stdout
     issues = json.loads(out)
     for it in issues:
@@ -730,6 +740,7 @@ def _fetch_prs_remote():
         ["gh", "pr", "list", "--state", "open", "--limit", "60",
          "--json", "number,title,body,isDraft,headRefName,baseRefName,url,reviewDecision,mergeable,labels,statusCheckRollup,comments,author,createdAt,updatedAt"],
         capture_output=True, text=True, timeout=20, check=True,
+        cwd=str(REPO_ROOT) if REPO_ROOT else None,
     ).stdout
     prs = json.loads(out)
     for pr in prs:

@@ -1,14 +1,18 @@
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Terminal as TerminalIcon } from 'lucide-react';
-import type { Agent } from '../types';
+import { ChevronLeft, ChevronRight, FolderPlus, Plus, RefreshCw, Terminal as TerminalIcon } from 'lucide-react';
+import type { Agent, Project } from '../types';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface AppHeaderProps {
+  projects: Project[];
+  activeProject: Project | null;
   agents: Agent[];
   defaultAgent: string;
   selectedAgent: string;
   busy: string;
   dockCollapsed: boolean;
+  onProjectChange: (projectId: string) => void;
+  onAddProject: () => void;
   onAgentChange: (agent: string) => void;
   onNewShell: () => void;
   onNewAgent: () => void;
@@ -17,11 +21,15 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({
+  projects,
+  activeProject,
   agents,
   defaultAgent,
   selectedAgent,
   busy,
   dockCollapsed,
+  onProjectChange,
+  onAddProject,
   onAgentChange,
   onNewShell,
   onNewAgent,
@@ -29,6 +37,7 @@ export function AppHeader({
   onToggleDock,
 }: AppHeaderProps) {
   const agentOptions = agents.length ? agents : [{ id: defaultAgent, label: defaultAgent, available: true, bin: '' } as Agent];
+  const projectOptions = projects.length ? projects : activeProject ? [activeProject] : [];
 
   return (
     <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-4 border-b border-border/60 bg-background/70 px-6 py-4 backdrop-blur-xl shadow-[0_10px_30px_hsl(0_0%_0%/0.22)]">
@@ -43,9 +52,53 @@ export function AppHeader({
           Claims, reviews, worktrees, and live terminals in one calm surface.
           {busy ? <span className="ml-2 text-warning">· {busy}…</span> : null}
         </p>
+        {activeProject ? (
+          <p className="max-w-[58ch] truncate text-[11px] leading-relaxed text-muted-foreground/80">
+            Project: {activeProject.label} · {activeProject.repo_root}
+          </p>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            Project
+          </span>
+          <div className="flex items-center gap-1">
+            <Select value={activeProject?.id || ''} onValueChange={onProjectChange}>
+              <SelectTrigger className="h-9 w-[240px]">
+                <SelectValue placeholder="Select project" />
+              </SelectTrigger>
+              <SelectContent>
+                {projectOptions.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    <span className="flex flex-col items-start gap-0.5">
+                      <span className="flex items-center gap-2">
+                        {project.label}
+                        {project.active ? (
+                          <span className="text-[10px] uppercase tracking-wide text-success">active</span>
+                        ) : null}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">{project.repo_root}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!!busy}
+              onClick={onAddProject}
+              className="h-9 w-9 px-0"
+              title="Add a project (paste a repo path)"
+              aria-label="Add a project"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
             Agent
